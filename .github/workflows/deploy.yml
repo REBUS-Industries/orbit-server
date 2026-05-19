@@ -1,0 +1,54 @@
+name: Deploy ORBIT Server
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deploy target'
+        required: true
+        default: 'prod'
+        type: choice
+        options: [prod, dev, both]
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      github.event.inputs.target == 'prod' ||
+      github.event.inputs.target == 'both'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VM 211 (ORBIT PROD — 10.0.200.211)
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.PROD_VM_HOST }}
+          username: ${{ secrets.PROD_VM_USER }}
+          key:      ${{ secrets.PROD_VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/orbit/server
+            git pull origin main
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
+            echo "✓ ORBIT PROD deploy complete: $(date)"
+            docker compose ps
+
+  deploy-dev:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.inputs.target == 'dev' ||
+      github.event.inputs.target == 'both'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VM 212 (ORBIT DEV — 10.0.200.212)
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.DEV_VM_HOST }}
+          
