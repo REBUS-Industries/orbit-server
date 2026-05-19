@@ -91,7 +91,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/readiness"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/readiness || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -122,6 +122,7 @@ services:
       PGDATABASE:       ${POSTGRES_DB:-orbit}
       PGUSER:           ${POSTGRES_USER:-orbit}
       PGPASSWORD:       ${POSTGRES_PASSWORD}
+      DATABASE_URL:     postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-orbit}
   # â”€â”€ File Import Service (upstream) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fileimport-service:
     image: speckle/speckle-fileimport-service:2
