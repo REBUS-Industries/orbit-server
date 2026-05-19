@@ -93,7 +93,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/readiness || exit 1"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "try{require('node:http').request({port:3000,hostname:'127.0.0.1',path:'/readiness',method:'GET',timeout:2000},(r)=>{process.exit(r.statusCode===200?0:1)}).end()}catch{process.exit(1)}"]
       interval: 15s
       timeout: 5s
       retries: 10
