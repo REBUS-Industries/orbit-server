@@ -2,7 +2,7 @@
 
 # ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
 # Includes: ORBIT platform + PRISM file conversion service
-# Evolved from Speckle Server 2.31.1 with REBUS customisations.
+# ORBIT server stack — built on open-source Speckle Server foundations.
 # All credentials are loaded from .env â€” never commit .env to Git.
 
 services:
