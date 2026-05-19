@@ -56,9 +56,14 @@ services:
     image: ghcr.io/cheekiskrub/orbit-frontend:${ORBIT_FRONTEND_VERSION:-latest}
     restart: unless-stopped
     environment:
-      NUXT_PUBLIC_SERVER_NAME:    ${SERVER_NAME:-ORBIT}
-      NUXT_PUBLIC_API_ORIGIN:     ${SERVER_URL:?SERVER_URL must be set}
-      NUXT_PUBLIC_LOG_LEVEL:      warn
+      NUXT_PUBLIC_SERVER_NAME:         ${SERVER_NAME:-ORBIT}
+      NUXT_PUBLIC_API_ORIGIN:          ${SERVER_URL:?SERVER_URL must be set}
+      NUXT_PUBLIC_BACKEND_API_ORIGIN:  http://orbit-server:3000
+      NUXT_PUBLIC_BASE_URL:            ${SERVER_URL}
+      NUXT_PUBLIC_SSL_ENABLED:         "true"
+      NUXT_REDIS_URL:                  redis://redis
+      SPECKLE_SERVER_URL:              http://orbit-server:3000
+      NUXT_PUBLIC_LOG_LEVEL:           warn
     depends_on:
       orbit-server:
         condition: service_healthy
