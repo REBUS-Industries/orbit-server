@@ -51,9 +51,9 @@ services:
       retries: 5
 
   # â”€â”€ ORBIT Frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Custom image: iFrame embedding, V3 named views, collectionType sidebar
+  # Image: ghcr.io/rebus-orbit/orbit-frontend (built from REBUS-ORBIT/orbit-server source)
   orbit-frontend:
-    image: ghcr.io/cheekiskrub/orbit-frontend:${ORBIT_FRONTEND_VERSION:-latest}
+    image: ghcr.io/rebus-orbit/orbit-frontend:${ORBIT_FRONTEND_VERSION:-latest}
     restart: unless-stopped
     environment:
       NUXT_PUBLIC_SERVER_NAME:         ${SERVER_NAME:-ORBIT}
@@ -69,9 +69,9 @@ services:
         condition: service_healthy
 
   # â”€â”€ ORBIT Server (API / Backend) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Custom image: patched backend, relaxed file size limits
+  # Image: ghcr.io/rebus-orbit/orbit-server
   orbit-server:
-    image: ghcr.io/cheekiskrub/orbit-server:${ORBIT_SERVER_VERSION:-latest}
+    image: ghcr.io/rebus-orbit/orbit-server:${ORBIT_SERVER_VERSION:-latest}
     restart: unless-stopped
     environment:
       CANONICAL_URL:              ${SERVER_URL:?SERVER_URL must be set}
@@ -104,9 +104,9 @@ services:
       retries: 10
 
   # â”€â”€ Preview Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Custom image: no-op Camera converter for clean 3D thumbnails
+  # Image: ghcr.io/rebus-orbit/orbit-preview
   orbit-preview:
-    image: ghcr.io/cheekiskrub/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
+    image: ghcr.io/rebus-orbit/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
     restart: unless-stopped
     environment:
       PORT:         3001
@@ -146,7 +146,7 @@ services:
   # Handles DWG / FBX / IFC / OBJ â†’ ORBIT objects
   # Shares Valkey with the rest of the stack for job queue
   prism:
-    image: ghcr.io/cheekiskrub/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
+    image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "8765:8765"
