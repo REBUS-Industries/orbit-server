@@ -130,7 +130,7 @@ services:
   # Handles DWG / FBX / IFC / OBJ â†’ ORBIT objects
   # Shares Valkey with the rest of the stack for job queue
   prism:
-    image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
+    image: ghcr.io/cheekiskrub/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "8765:8765"
