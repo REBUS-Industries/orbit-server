@@ -86,6 +86,7 @@ services:
       S3_CREATE_BUCKET:              "true"
       S3_REGION:                    ""
       FILE_SIZE_LIMIT_MB:         ${FILE_SIZE_LIMIT_MB:-1000}
+      EMAIL: ${EMAIL:-false}
       EMAIL_HOST:                 ${EMAIL_HOST:-}
       EMAIL_PORT:                 ${EMAIL_PORT:-587}
       EMAIL_USERNAME:             ${EMAIL_USERNAME:-}
