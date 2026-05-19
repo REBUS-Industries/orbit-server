@@ -1,0 +1,20 @@
+# SSH keys — never commit
+Infra/id_ed25519_*
+**/.env
+**/id_ed25519_*
+**/*.pem
+**/*.key
+
+# Local build artifacts
+**/node_modules/
+**/bin/
+**/obj/
+**/.output/
+**/.nuxt/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+Server/backups/
