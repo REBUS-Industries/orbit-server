@@ -8,4 +8,9 @@
     reverse_proxy @prism prism:8765
 
     # GraphQL / API / Auth / Objects → orbit-server
-    @backend path /graphql /api/* /auth/* /objects/* /preview/* /b
+    @backend path /graphql /api/* /auth/* /objects/* /preview/* /blob/*
+    reverse_proxy @backend orbit-server:3000
+
+    # Everything else → frontend
+    reverse_proxy orbit-frontend:3000
+}

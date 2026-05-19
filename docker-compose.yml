@@ -131,4 +131,26 @@ services:
   # Shares Valkey with the rest of the stack for job queue
   prism:
     image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
- 
+    restart: unless-stopped
+    environment:
+      RHINOCOMPUTE_URL: ${RHINOCOMPUTE_URL:-}
+      PORT:             8765
+    depends_on:
+      - orbit-server
+
+  # ── Internal Routing (Caddy) ────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - orbit-server
+      - orbit-frontend
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
