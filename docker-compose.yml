@@ -76,6 +76,7 @@ services:
     environment:
       CANONICAL_URL:              ${SERVER_URL:?SERVER_URL must be set}
       SESSION_SECRET:             ${SESSION_SECRET:?SESSION_SECRET must be set}
+      FRONTEND_ORIGIN:            ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}
       POSTGRES_URL:               postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-orbit}
       REDIS_URL:                  redis://redis
       S3_ENDPOINT:                http://minio:9000
