@@ -1,4 +1,4 @@
-version: "3.9"
+﻿version: "3.9"
 
 # ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
 # Includes: ORBIT platform + PRISM file conversion service
@@ -102,6 +102,7 @@ services:
     image: ghcr.io/cheekiskrub/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
     restart: unless-stopped
     environment:
+      PORT:         3001
       SERVER_URL:   http://orbit-server:3000
       REDIS_URL:    redis://redis
     depends_on:
@@ -116,7 +117,11 @@ services:
       LOG_LEVEL:    warn
       REDIS_URL:    redis://redis
       SERVER_URL:   http://orbit-server:3000
-
+      PGHOST:           postgres
+      PGPORT:           5432
+      PGDATABASE:       ${POSTGRES_DB:-orbit}
+      PGUSER:           ${POSTGRES_USER:-orbit}
+      PGPASSWORD:       ${POSTGRES_PASSWORD}
   # â”€â”€ File Import Service (upstream) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fileimport-service:
     image: speckle/speckle-fileimport-service:2
