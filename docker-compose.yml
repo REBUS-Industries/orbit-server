@@ -1,13 +1,13 @@
 version: "3.9"
 
-# ORBIT Server Docker Stack — VM 211 (prod) / VM 212 (dev)
+# ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
 # Includes: ORBIT platform + PRISM file conversion service
 # Evolved from Speckle Server 2.31.1 with REBUS customisations.
-# All credentials are loaded from .env — never commit .env to Git.
+# All credentials are loaded from .env â€” never commit .env to Git.
 
 services:
 
-  # ── Database ─────────────────────────────────────────────────────────────
+  # â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   postgres:
     image: postgres:16.9-alpine
     restart: unless-stopped
@@ -23,7 +23,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Cache / Queue ─────────────────────────────────────────────────────────
+  # â”€â”€ Cache / Queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   redis:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
       interval: 10s
       retries: 5
 
-  # ── Object Storage ────────────────────────────────────────────────────────
+  # â”€â”€ Object Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   minio:
     image: minio/minio
     restart: unless-stopped
@@ -49,7 +49,7 @@ services:
       interval: 30s
       retries: 3
 
-  # ── ORBIT Frontend ────────────────────────────────────────────────────────
+  # â”€â”€ ORBIT Frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Custom image: iFrame embedding, V3 named views, collectionType sidebar
   orbit-frontend:
     image: ghcr.io/cheekiskrub/orbit-frontend:${ORBIT_FRONTEND_VERSION:-latest}
@@ -62,7 +62,7 @@ services:
       orbit-server:
         condition: service_healthy
 
-  # ── ORBIT Server (API / Backend) ──────────────────────────────────────────
+  # â”€â”€ ORBIT Server (API / Backend) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Custom image: patched backend, relaxed file size limits
   orbit-server:
     image: ghcr.io/cheekiskrub/orbit-server:${ORBIT_SERVER_VERSION:-latest}
@@ -95,7 +95,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Preview Service ───────────────────────────────────────────────────────
+  # â”€â”€ Preview Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Custom image: no-op Camera converter for clean 3D thumbnails
   orbit-preview:
     image: ghcr.io/cheekiskrub/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
@@ -107,7 +107,7 @@ services:
       - orbit-server
       - redis
 
-  # ── Webhook Service (upstream) ────────────────────────────────────────────
+  # â”€â”€ Webhook Service (upstream) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   webhook-service:
     image: speckle/speckle-webhook-service:2
     restart: unless-stopped
@@ -116,7 +116,7 @@ services:
       REDIS_URL:    redis://redis
       SERVER_URL:   http://orbit-server:3000
 
-  # ── File Import Service (upstream) ────────────────────────────────────────
+  # â”€â”€ File Import Service (upstream) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fileimport-service:
     image: speckle/speckle-fileimport-service:2
     restart: unless-stopped
@@ -126,9 +126,45 @@ services:
     depends_on:
       - orbit-server
 
-  # ── PRISM — File Conversion Service ──────────────────────────────────────
-  # Handles DWG / FBX / IFC / OBJ → ORBIT objects
+  # â”€â”€ PRISM â€” File Conversion Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # Handles DWG / FBX / IFC / OBJ â†’ ORBIT objects
   # Shares Valkey with the rest of the stack for job queue
   prism:
     image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
- 
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      RHINOCOMPUTE_URL: ${RHINOCOMPUTE_URL:-http://compute.rebus.industries}
+      ORBIT_SERVER_URL: http://orbit-server:3000
+      REDIS_URL:        redis://redis
+      PORT:             8765
+    depends_on:
+      orbit-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # â”€â”€ Internal Caddy (routes within the stack) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
