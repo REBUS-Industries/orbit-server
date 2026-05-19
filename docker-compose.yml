@@ -170,14 +170,12 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    # dns_search: [] prevents the VM's AD search domain (ad.rebus.industries) from
-    # being appended to Docker service names, which breaks container-to-container resolution.
-    dns_search: []
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-resolv.conf:/etc/resolv.conf:ro
       - caddy_data:/data
       - caddy_config:/config
 
