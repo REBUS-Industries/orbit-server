@@ -37,6 +37,7 @@ public class OrbitAuthManager
     {
         var serverUrl = _config.GetUrl(target);
         var appId     = _config.GetAppId(target);
+        var appSecret = _config.GetAppSecret(target);
 
         var (challenge, verifier) = GenerateChallenge();
         var callbackUrl = $"http://localhost:{CALLBACK_PORT}/";
@@ -53,7 +54,7 @@ public class OrbitAuthManager
         var code = await WaitForCallbackAsync(ct);
 
         // Exchange code for token
-        var token = await ExchangeCodeAsync(serverUrl, appId, code, verifier, callbackUrl, ct);
+        var token = await ExchangeCodeAsync(serverUrl, appId, appSecret, code, verifier, callbackUrl, ct);
 
         return token;
     }
@@ -82,13 +83,13 @@ public class OrbitAuthManager
     }
 
     private async Task<string> ExchangeCodeAsync(
-        string serverUrl, string appId, string code,
+        string serverUrl, string appId, string appSecret, string code,
         string verifier, string callbackUrl, CancellationToken ct)
     {
         var payload = JsonConvert.SerializeObject(new
         {
             appId,
-            appSecret = verifier,
+            appSecret,
             accessCode = code,
             challenge = verifier
         });
