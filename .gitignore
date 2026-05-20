@@ -1,9 +1,14 @@
-# SSH keys — never commit
+# SSH keys - never commit
 Infra/id_ed25519_*
 **/.env
+.env
 **/id_ed25519_*
 **/*.pem
 **/*.key
+
+# Never commit real credentials (root .env for docker-compose)
+# Docker volumes (local dev only)
+data/
 
 # Local build artifacts
 **/node_modules/
@@ -21,4 +26,3 @@ Server/backups/
 
 # Local temp
 .tmp/
-

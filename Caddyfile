@@ -1,0 +1,16 @@
+# ORBIT Server internal Caddy
+# Routes requests to the correct service within the Docker stack.
+# Runs inside the Docker network - TLS termination at external HA proxy pair.
+
+:80 {
+    # PRISM conversion API
+    @prism path /convert/* /jobs/* /health
+    reverse_proxy @prism prism:8765
+
+    # GraphQL / API / Auth / Objects -> orbit-server
+    @backend path /graphql /api/* /auth/* /objects/* /preview/* /blob/*
+    reverse_proxy @backend orbit-server:3000
+
+    # Frontend - catch-all
+    reverse_proxy orbit-frontend:8080
+}
