@@ -33,7 +33,13 @@ jobs:
             set -e
             cd /opt/orbit/server
             git pull origin main
-            docker compose pull
+            # Pull only registry-hosted images (excludes locally-built
+            # orbit-server-patched, which would otherwise fail with
+            # "manifest not found").
+            docker compose pull --ignore-buildable
+            # Always rebuild orbit-server-patched on top of the latest
+            # upstream base so it picks up any ORBIT_SERVER_VERSION bump.
+            docker compose build --pull orbit-server
             docker compose up -d --remove-orphans
             docker image prune -f
             echo "✓ ORBIT PROD deploy complete: $(date)"
@@ -57,7 +63,8 @@ jobs:
             set -e
             cd /opt/orbit/server
             git pull origin develop
-            docker compose pull
+            docker compose pull --ignore-buildable
+            docker compose build --pull orbit-server
             docker compose up -d --remove-orphans
             docker image prune -f
             echo "✓ ORBIT DEV deploy complete: $(date)"

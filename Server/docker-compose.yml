@@ -64,18 +64,31 @@ services:
       NUXT_REDIS_URL:                  redis://redis
       SPECKLE_SERVER_URL:              http://orbit-server:3000
       NUXT_PUBLIC_LOG_LEVEL:           warn
+      NUXT_PUBLIC_FF_SAVED_VIEWS_ENABLED: "true"
     depends_on:
       orbit-server:
         condition: service_healthy
 
   # â”€â”€ ORBIT Server (API / Backend) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Image: ghcr.io/rebus-orbit/orbit-server
+  # Base image:    ghcr.io/rebus-orbit/orbit-server
+  # Patched image: orbit-server-patched (built locally on the VM from ./patches/orbit-server)
+  #
+  # The `build:` directive layers ORBIT-specific compiled-JS patches on top
+  # of the upstream image (see ./patches/orbit-server/README.md). To bump
+  # the upstream version, edit ORBIT_SERVER_VERSION in .env and run:
+  #   docker compose up -d --build orbit-server
   orbit-server:
-    image: ghcr.io/rebus-orbit/orbit-server:${ORBIT_SERVER_VERSION:-latest}
+    build:
+      context: ./patches/orbit-server
+      args:
+        ORBIT_SERVER_BASE_VERSION: ${ORBIT_SERVER_VERSION:-latest}
+    image: orbit-server-patched:${ORBIT_SERVER_VERSION:-latest}
+    pull_policy: build
     restart: unless-stopped
     environment:
       CANONICAL_URL:              ${SERVER_URL:?SERVER_URL must be set}
       SESSION_SECRET:             ${SESSION_SECRET:?SESSION_SECRET must be set}
+      FRONTEND_ORIGIN:            ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}
       POSTGRES_URL:               postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-orbit}
       REDIS_URL:                  redis://redis
       S3_ENDPOINT:                http://minio:9000
@@ -85,11 +98,14 @@ services:
       S3_CREATE_BUCKET:              "true"
       S3_REGION:                    ""
       FILE_SIZE_LIMIT_MB:         ${FILE_SIZE_LIMIT_MB:-1000}
+      EMAIL: ${EMAIL:-false}
       EMAIL_HOST:                 ${EMAIL_HOST:-}
       EMAIL_PORT:                 ${EMAIL_PORT:-587}
       EMAIL_USERNAME:             ${EMAIL_USERNAME:-}
       EMAIL_PASSWORD:             ${EMAIL_PASSWORD:-}
       EMAIL_FROM:                 ${EMAIL_FROM:-orbit@rebus.industries}
+      FF_SAVED_VIEWS_ENABLED: "true"
+      ADMIN_OVERRIDE_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,14 +186,12 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    # dns_search: [] prevents the VM's AD search domain (ad.rebus.industries) from
-    # being appended to Docker service names, which breaks container-to-container resolution.
-    dns_search: []
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-resolv.conf:/etc/resolv.conf:ro
       - caddy_data:/data
       - caddy_config:/config
 
