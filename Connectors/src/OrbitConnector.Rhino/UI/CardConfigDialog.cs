@@ -88,7 +88,7 @@ public class CardConfigDialog : Dialog<DialogResult>
         _newProjectBtn.Click += OnNewProject;
         _newModelBtn.Click   += OnNewModel;
 
-        _okBtn.Click += (_, _) =>
+        _okBtn.Click += async (_, _) =>
         {
             if (Validate())
             {
@@ -179,38 +179,29 @@ public class CardConfigDialog : Dialog<DialogResult>
         foreach (var p in _projects)
             _projectDrop.Items.Add(new ListItem { Text = p.Name ?? p.Id, Key = p.Id });
 
-        // Restore selection
+        // Restore selection — fire async model load without blocking
         if (_card.ProjectId != null)
         {
             var idx = _projects.FindIndex(p => p.Id == _card.ProjectId);
-            if (idx >= 0)
-            {
-                _projectDrop.SelectedIndex = idx;
-                LoadModels(_card.ProjectId);
-            }
+            if (idx >= 0) _projectDrop.SelectedIndex = idx;
         }
         else if (_projects.Count > 0)
         {
             _projectDrop.SelectedIndex = 0;
-            LoadModels(_projects[0].Id!);
+        }
+
+        if (_projectDrop.SelectedIndex >= 0)
+        {
+            var pid = _projects[_projectDrop.SelectedIndex].Id!;
+            _ = LoadModelsAsync(pid);
         }
     }
 
-    private void OnProjectChanged(object? sender, EventArgs e)
+    private async void OnProjectChanged(object? sender, EventArgs e)
     {
         if (_projectDrop.SelectedIndex < 0 || _projectDrop.SelectedIndex >= _projects.Count) return;
         var pid = _projects[_projectDrop.SelectedIndex].Id!;
-        Task.Run(() => LoadModelsAsync(pid));
-    }
-
-    private void LoadModels(string projectId)
-    {
-        try
-        {
-            _models = _client.GetModelsAsync(projectId).GetAwaiter().GetResult();
-            PopulateModels();
-        }
-        catch { _statusLabel.Text = "Failed to load models."; }
+        await LoadModelsAsync(pid);
     }
 
     private async Task LoadModelsAsync(string projectId)
@@ -218,11 +209,11 @@ public class CardConfigDialog : Dialog<DialogResult>
         try
         {
             _models = await _client.GetModelsAsync(projectId);
-            Application.Instance.Invoke(PopulateModels);
+            PopulateModels();
         }
         catch (Exception ex)
         {
-            Application.Instance.Invoke(() => _statusLabel.Text = $"Models: {ex.Message}");
+            _statusLabel.Text = $"Failed to load models: {ex.Message}";
         }
     }
 
@@ -269,55 +260,41 @@ public class CardConfigDialog : Dialog<DialogResult>
     // Create project/model
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void OnNewProject(object? sender, EventArgs e)
+    private async void OnNewProject(object? sender, EventArgs e)
     {
         var dlg = new InputDialog("New Project", "Project name:");
         if (dlg.ShowModal(this) != DialogResult.Ok || string.IsNullOrWhiteSpace(dlg.Value)) return;
-        Task.Run(async () =>
+        try
         {
-            try
-            {
-                var project = await _client.CreateProjectAsync(dlg.Value);
-                _projects.Insert(0, project);
-                Application.Instance.Invoke(() =>
-                {
-                    PopulateProjects();
-                    _projectDrop.SelectedIndex = 0;
-                });
-            }
-            catch (Exception ex)
-            {
-                Application.Instance.Invoke(() =>
-                    MessageBox.Show($"Failed to create project: {ex.Message}", "ORBIT", MessageBoxType.Error));
-            }
-        });
+            var project = await _client.CreateProjectAsync(dlg.Value);
+            _projects.Insert(0, project);
+            PopulateProjects();
+            _projectDrop.SelectedIndex = 0;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to create project: {ex.Message}", "ORBIT", MessageBoxType.Error);
+        }
     }
 
-    private void OnNewModel(object? sender, EventArgs e)
+    private async void OnNewModel(object? sender, EventArgs e)
     {
         if (_projectDrop.SelectedIndex < 0) return;
         var pid = _projects[_projectDrop.SelectedIndex].Id!;
 
         var dlg = new InputDialog("New Model", "Model name:");
         if (dlg.ShowModal(this) != DialogResult.Ok || string.IsNullOrWhiteSpace(dlg.Value)) return;
-        Task.Run(async () =>
+        try
         {
-            try
-            {
-                var model = await _client.CreateModelAsync(pid, dlg.Value);
-                _models.Insert(0, model);
-                Application.Instance.Invoke(() =>
-                {
-                    PopulateModels();
-                    _modelDrop.SelectedIndex = 0;
-                });
-            }
-            catch (Exception ex)
-            {
-                Application.Instance.Invoke(() =>
-                    MessageBox.Show($"Failed to create model: {ex.Message}", "ORBIT", MessageBoxType.Error));
-            }
-        });
+            var model = await _client.CreateModelAsync(pid, dlg.Value);
+            _models.Insert(0, model);
+            PopulateModels();
+            _modelDrop.SelectedIndex = 0;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to create model: {ex.Message}", "ORBIT", MessageBoxType.Error);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

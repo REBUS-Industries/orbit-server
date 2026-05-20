@@ -97,8 +97,8 @@ public class OrbitEtoPanel : Panel, IPanel
         var addSend    = MakeAccentButton("+ Add Send Card");
         var addReceive = MakeAccentButton("+ Add Receive Card", outline: true);
 
-        addSend.Click    += (_, _) => Task.Run(() => OpenCardConfig(CardType.Send));
-        addReceive.Click += (_, _) => Task.Run(() => OpenCardConfig(CardType.Receive));
+        addSend.Click    += async (_, _) => await OpenCardConfigAsync(new ConnectorCard { Type = CardType.Send,    Target = _activeTarget }, isNew: true);
+        addReceive.Click += async (_, _) => await OpenCardConfigAsync(new ConnectorCard { Type = CardType.Receive, Target = _activeTarget }, isNew: true);
 
         // ── assemble root ─────────────────────────────────────────────────────
         _root.BeginVertical(new Padding(0), new Size(0, 0));
@@ -118,9 +118,9 @@ public class OrbitEtoPanel : Panel, IPanel
         Content = _root;
 
         // ── wire events ───────────────────────────────────────────────────────
-        _loginButton.Click  += (_, _) => Task.Run(() => DoLogin());
+        _loginButton.Click  += async (_, _) => await DoLogin();
         _logoutButton.Click += (_, _) => DoLogout();
-        _targetDrop.SelectedIndexChanged += OnTargetChanged;
+        _targetDrop.SelectedIndexChanged += async (s, e) => await OnTargetChangedAsync(s, e);
 
         // Try to restore session from saved token
         Task.Run(() => TryRestoreSession());
@@ -166,18 +166,16 @@ public class OrbitEtoPanel : Panel, IPanel
             if (user == null) return;
             _client = client;
             _currentUserName = user.Name ?? user.Email ?? "User";
-            Application.Instance.Invoke(() => SetLoggedIn(_currentUserName));
+            // May be called from Task.Run at startup, so marshal to UI thread
+            Application.Instance.AsyncInvoke(() => SetLoggedIn(_currentUserName!));
         }
         catch { /* token expired or server unreachable — stay logged out */ }
     }
 
     private async Task DoLogin()
     {
-        Application.Instance.Invoke(() =>
-        {
-            _loginButton.Enabled = false;
-            _loginButton.Text = "Opening browser…";
-        });
+        _loginButton.Enabled = false;
+        _loginButton.Text    = "Opening browser…";
         try
         {
             var serverUrl = _config.GetUrl(_activeTarget);
@@ -190,16 +188,13 @@ public class OrbitEtoPanel : Panel, IPanel
 
             _client = client;
             _currentUserName = user.Name ?? user.Email ?? "User";
-            Application.Instance.Invoke(() => SetLoggedIn(_currentUserName));
+            SetLoggedIn(_currentUserName);
         }
         catch (Exception ex)
         {
-            Application.Instance.Invoke(() =>
-            {
-                MessageBox.Show($"Login failed: {ex.Message}", "ORBIT Login", MessageBoxType.Error);
-                _loginButton.Enabled = true;
-                _loginButton.Text = "Login";
-            });
+            MessageBox.Show($"Login failed: {ex.Message}", "ORBIT Login", MessageBoxType.Error);
+            _loginButton.Enabled = true;
+            _loginButton.Text    = "Login";
         }
     }
 
@@ -232,14 +227,14 @@ public class OrbitEtoPanel : Panel, IPanel
         RefreshCardList();
     }
 
-    private void OnTargetChanged(object? sender, EventArgs e)
+    private async Task OnTargetChangedAsync(object? sender, EventArgs e)
     {
         _activeTarget = _targetDrop.SelectedIndex == 0 ? ServerTarget.Prod : ServerTarget.Dev;
         _tokenStore.LastTarget = _activeTarget;
         _client = null;
         _currentUserName = null;
         SetLoggedOut();
-        Task.Run(() => TryRestoreSession());
+        await TryRestoreSession();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -308,14 +303,14 @@ public class OrbitEtoPanel : Panel, IPanel
             TextColor = TextPrim,
             Enabled = _client != null && card.ProjectId != null
         };
-        actionButton.Click += (_, _) =>
+        actionButton.Click += async (_, _) =>
         {
-            if (isSend) Task.Run(() => DoSend(card));
+            if (isSend) await DoSend(card);
             else        MessageBox.Show("Receive coming soon.", "ORBIT");
         };
 
         var configButton = new Button { Text = "⚙", Width = 28, BackgroundColor = BgCard, TextColor = TextSec };
-        configButton.Click += (_, _) => Task.Run(() => OpenCardConfig(card));
+        configButton.Click += async (_, _) => await OpenCardConfigAsync(card, isNew: false);
 
         var deleteButton = new Button { Text = "✕", Width = 28, BackgroundColor = BgCard, TextColor = Danger };
         deleteButton.Click += (_, _) =>
@@ -356,46 +351,42 @@ public class OrbitEtoPanel : Panel, IPanel
     // Card config dialog
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void OpenCardConfig(CardType type)
-    {
-        var card = new ConnectorCard { Type = type, Target = _activeTarget };
-        OpenCardConfig(card, isNew: true);
-    }
-
-    private void OpenCardConfig(ConnectorCard existingCard)
-        => OpenCardConfig(existingCard, isNew: false);
-
-    private void OpenCardConfig(ConnectorCard card, bool isNew)
+    private async Task OpenCardConfigAsync(ConnectorCard card, bool isNew)
     {
         if (_client == null)
         {
-            Application.Instance.Invoke(() =>
-                MessageBox.Show("Please log in first.", "ORBIT"));
+            MessageBox.Show("Please log in first.", "ORBIT");
             return;
         }
 
-        // Load projects synchronously for the dialog (blocks briefly)
+        // Disable buttons while loading so the user can't double-click
+        ShowStatus("Loading projects…");
+
         List<Orbit.Sdk.Api.Models.OrbitProject> projects;
-        try { projects = _client.GetProjectsAsync().GetAwaiter().GetResult(); }
+        try
+        {
+            // Await on the UI thread — Eto's SynchronizationContext marshals the
+            // continuation back here, so no Invoke needed after the await.
+            projects = await _client.GetProjectsAsync();
+        }
         catch (Exception ex)
         {
-            Application.Instance.Invoke(() =>
-                MessageBox.Show($"Failed to load projects: {ex.Message}", "ORBIT", MessageBoxType.Error));
+            ShowStatus(string.Empty);
+            MessageBox.Show($"Failed to load projects: {ex.Message}", "ORBIT", MessageBoxType.Error);
             return;
         }
 
-        Application.Instance.Invoke(() =>
+        ShowStatus(string.Empty);
+
+        var dlg = new CardConfigDialog(card, projects, _client, isNew);
+        if (dlg.ShowModal(this) == DialogResult.Ok)
         {
-            var dlg = new CardConfigDialog(card, projects, _client, isNew);
-            if (dlg.ShowModal(Application.Instance.MainForm) == DialogResult.Ok)
-            {
-                if (isNew)
-                    CardStore.Instance?.AddCard(dlg.Result!);
-                else
-                    CardStore.Instance?.UpdateCard(dlg.Result!);
-                RefreshCardList();
-            }
-        });
+            if (isNew)
+                CardStore.Instance?.AddCard(dlg.Result!);
+            else
+                CardStore.Instance?.UpdateCard(dlg.Result!);
+            RefreshCardList();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -414,11 +405,8 @@ public class OrbitEtoPanel : Panel, IPanel
 
         try
         {
-            Application.Instance.Invoke(() =>
-            {
-                _progressBar.Visible = true;
-                _statusLabel.Visible = true;
-            });
+            _progressBar.Visible = true;
+            _statusLabel.Visible = true;
 
             var serverUrl = _config.GetUrl(card.Target);
             var token     = _tokenStore.GetToken(serverUrl)
@@ -430,10 +418,10 @@ public class OrbitEtoPanel : Panel, IPanel
                 card, doc, transport, _client,
                 progress: new Progress<(string status, int percent)>(p =>
                 {
-                    Application.Instance.Invoke(() =>
+                    Application.Instance.AsyncInvoke(() =>
                     {
-                        _statusLabel.Text    = p.status;
-                        _progressBar.Value   = p.percent;
+                        _statusLabel.Text  = p.status;
+                        _progressBar.Value = p.percent;
                     });
                 }),
                 ct: ct);
@@ -442,33 +430,28 @@ public class OrbitEtoPanel : Panel, IPanel
             card.LastSentAt    = DateTime.UtcNow;
             CardStore.Instance?.UpdateCard(card);
 
+            _statusLabel.Text    = $"✓ Sent! Version {versionId[..8]}…";
+            _progressBar.Visible = false;
+            RefreshCardList();
+
             var url = $"{serverUrl}/projects/{card.ProjectId}/models/{card.ModelId}@{versionId}";
-            Application.Instance.Invoke(() =>
+            if (MessageBox.Show("Version created!\n\nOpen in browser?", "ORBIT",
+                    MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
-                _statusLabel.Text = $"✓ Sent! Version {versionId[..8]}…";
-                _progressBar.Visible = false;
-                RefreshCardList();
-                // Offer to open in browser
-                if (MessageBox.Show($"Version created!\n\nOpen in browser?", "ORBIT",
-                        MessageBoxButtons.YesNo) == DialogResult.Yes)
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                        { FileName = url, UseShellExecute = true });
-                }
-            });
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    { FileName = url, UseShellExecute = true });
+            }
         }
         catch (OperationCanceledException)
         {
-            Application.Instance.Invoke(() => { _statusLabel.Text = "Cancelled."; _progressBar.Visible = false; });
+            _statusLabel.Text    = "Cancelled.";
+            _progressBar.Visible = false;
         }
         catch (Exception ex)
         {
-            Application.Instance.Invoke(() =>
-            {
-                _progressBar.Visible = false;
-                MessageBox.Show($"Send failed: {ex.Message}", "ORBIT", MessageBoxType.Error);
-                _statusLabel.Text = "Send failed.";
-            });
+            _progressBar.Visible = false;
+            MessageBox.Show($"Send failed: {ex.Message}", "ORBIT", MessageBoxType.Error);
+            _statusLabel.Text = "Send failed.";
         }
     }
 
