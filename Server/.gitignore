@@ -1,0 +1,9 @@
+# Never commit real credentials
+.env
+
+# Docker volumes (local dev only)
+data/
+
+# OS
+.DS_Store
+Thumbs.db

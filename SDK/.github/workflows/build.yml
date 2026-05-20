@@ -1,0 +1,31 @@
+name: Build & Test SDK
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore ORBIT-SDK.sln
+      - run: dotnet build ORBIT-SDK.sln --configuration Release --no-restore
+      - run: dotnet test ORBIT-SDK.sln --configuration Release --no-build --verbosity normal
+
+      - name: Pack NuGet packages (on release)
+        if: github.event_name == 'release'
+        run: |
+          dotnet pack src/Orbit.Objects/Orbit.Objects.csproj -c Release -o ./nupkgs
+          dotnet pack src/Orbit.Sdk/Orbit.Sdk.csproj -c Release -o ./nupkgs
+
+      - name: Publish to GitHub Packages (on release)
+        if: github.event_name == 'release'
+        run: dotnet nuget push ./nupkgs/*.nupkg --source https://nuget.pkg.github.com/${{ github.repository_owner }} --api-key ${{ secrets.GITHUB_TOKEN }}
