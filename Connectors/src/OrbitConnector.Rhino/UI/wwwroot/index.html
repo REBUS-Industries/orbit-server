@@ -239,7 +239,17 @@ const state = {
   projects: {},    // {cardId: [{id,name}]}
   models: {},      // {cardId: [{id,name}]}
   layers: [],      // [{fullPath,name,depth}] - from active Rhino doc
+  // Per-card transient UI state. Never cleared by onCards() so it
+  // survives every full renderCards() DOM rebuild — that's what keeps
+  // the project/model dropdowns populated, the upload progress visible,
+  // and the expanded/collapsed state correct when the user switches
+  // panel tabs in Rhino and comes back.
+  uiState: {},     // {cardId: {expanded, isProcessing, progressStatus, progressPercent, statusMsg, statusCls, resultUrl, newProjOpen, newProjName, newMdlOpen, newMdlName}}
 };
+function getCardUi(cardId) {
+  if (!state.uiState[cardId]) state.uiState[cardId] = { expanded: false };
+  return state.uiState[cardId];
+}
 
 // ── Bridge to C# ─────────────────────────────────────────────────────────────
 function sendToHost(action, data) {
@@ -344,8 +354,9 @@ function renderCards() {
 
 function buildCard(card) {
   const isSend = card.type === 'send';
+  const ui = getCardUi(card.id);
   const wrap = document.createElement('div');
-  wrap.className = 'card';
+  wrap.className = 'card' + (ui.expanded ? ' expanded' : '');
   wrap.id = 'card-' + card.id;
 
   const ago = card.lastSentAt ? timeAgo(card.lastSentAt) : '';
@@ -469,15 +480,57 @@ function buildLayerSection(card) {
 }
 
 function bindCard(card) {
-  // populate combos if we have cached data
-  if (state.projects[card.id]) populateProjCombo(card.id, state.projects[card.id], card.projectId);
-  if (state.models[card.id])   populateMdlCombo(card.id, state.models[card.id], card.modelId);
+  const ui = getCardUi(card.id);
+
+  // Project dropdown: use cached list if we have it, otherwise auto-fetch
+  // so the user's previously-selected project shows up again on its own
+  // after a renderCards() DOM rebuild.
+  if (state.projects[card.id]) {
+    populateProjCombo(card.id, state.projects[card.id], card.projectId);
+  } else if (card.projectId || ui.expanded) {
+    sendToHost('getProjects', { cardId: card.id });
+  }
+
+  // Model dropdown: same idea. If we have a projectId but no cached
+  // models, fetch — onModels will then re-select card.modelId.
+  if (state.models[card.id]) {
+    populateMdlCombo(card.id, state.models[card.id], card.modelId);
+  } else if (card.projectId) {
+    sendToHost('getModels', { cardId: card.id, projectId: card.projectId });
+  }
+
+  // Re-apply transient UI state that the DOM rebuild just blew away.
+  if (ui.newProjOpen) {
+    const el = document.getElementById('new-proj-' + card.id);
+    if (el) el.style.display = 'flex';
+    const inp = document.getElementById('new-proj-name-' + card.id);
+    if (inp && ui.newProjName) inp.value = ui.newProjName;
+  }
+  if (ui.newMdlOpen) {
+    const el = document.getElementById('new-mdl-' + card.id);
+    if (el) el.style.display = 'flex';
+    const inp = document.getElementById('new-mdl-name-' + card.id);
+    if (inp && ui.newMdlName) inp.value = ui.newMdlName;
+  }
+  if (ui.isProcessing) {
+    showProgress(card.id, ui.progressStatus || '', ui.progressPercent || 0, /*persist*/ false);
+    const btn = document.getElementById('action-btn-' + card.id);
+    if (btn) btn.disabled = true;
+  }
+  if (ui.statusMsg) {
+    showStatus(card.id, ui.statusMsg, ui.statusCls || 'info', /*persist*/ false);
+  }
+  if (ui.resultUrl) {
+    const link = document.getElementById('open-link-' + card.id);
+    if (link) { link.dataset.url = ui.resultUrl; link.classList.add('show'); }
+  }
 }
 
 // ── Card interactions ─────────────────────────────────────────────────────────
 function toggleCard(cardId) {
   const el = document.getElementById('card-' + cardId);
   const expanded = el.classList.toggle('expanded');
+  getCardUi(cardId).expanded = expanded;
   if (expanded) {
     const card = state.cards.find(c => c.id === cardId);
     if (card && !state.projects[cardId]) refreshProjects(cardId);
@@ -647,6 +700,8 @@ function onProgress(cardId, status, percent) {
 function onSendOk(cardId, versionId, url) {
   const card = state.cards.find(c => c.id === cardId);
   if (card) { card.lastVersionId = versionId; card.lastSentAt = new Date().toISOString(); }
+  const ui = getCardUi(cardId);
+  ui.resultUrl = url || '';
   hideProgress(cardId);
   showStatus(cardId, '✓ Version created', 'ok');
   const openLink = document.getElementById('open-link-' + cardId);
@@ -661,7 +716,17 @@ function onSendErr(cardId, msg) {
   const btn = document.getElementById('action-btn-' + cardId);
   if (btn) btn.disabled = false;
 }
-function showProgress(cardId, status, percent) {
+// `persist=true` (the default) updates state.uiState so the progress
+// survives a renderCards() rebuild. bindCard() calls this with
+// persist=false when it's restoring previously-saved state — no need
+// to write the same values back to state in that case.
+function showProgress(cardId, status, percent, persist = true) {
+  if (persist) {
+    const ui = getCardUi(cardId);
+    ui.isProcessing = true;
+    ui.progressStatus = status;
+    ui.progressPercent = percent;
+  }
   const bar  = document.getElementById('prog-bar-' + cardId);
   const fill = document.getElementById('prog-fill-' + cardId);
   const stat = document.getElementById('status-' + cardId);
@@ -670,10 +735,19 @@ function showProgress(cardId, status, percent) {
   if (stat) { stat.textContent = status; stat.className = 'cb-status show info'; }
 }
 function hideProgress(cardId) {
+  const ui = getCardUi(cardId);
+  ui.isProcessing = false;
+  ui.progressStatus = '';
+  ui.progressPercent = 0;
   const bar = document.getElementById('prog-bar-' + cardId);
   if (bar) bar.classList.remove('show');
 }
-function showStatus(cardId, msg, cls) {
+function showStatus(cardId, msg, cls, persist = true) {
+  if (persist) {
+    const ui = getCardUi(cardId);
+    ui.statusMsg = msg;
+    ui.statusCls = cls;
+  }
   const stat = document.getElementById('status-' + cardId);
   if (stat) { stat.textContent = msg; stat.className = `cb-status show ${cls}`; }
 }

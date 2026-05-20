@@ -36,6 +36,14 @@ public class OrbitEtoPanel : Panel, IPanel
     private readonly WebView _webView;
     private bool _uiReady;
 
+    // Tracks which document we last pushed cards for, so PanelShown only
+    // re-pushes when the user actually switched Rhino documents. Without
+    // this, every tab-switch in the Rhino panel host triggers SendCards
+    // → JS renderCards → full DOM teardown, which wipes the user's
+    // in-flight UI state (selected project/model, "converting geometry…"
+    // progress, entered text, etc).
+    private uint _lastSyncedDocSerial = 0;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public OrbitEtoPanel(uint documentSerialNumber)
@@ -495,13 +503,23 @@ public class OrbitEtoPanel : Panel, IPanel
     void IPanel.PanelShown(uint documentSerialNumber, ShowPanelReason reason)
     {
         var doc = RhinoDoc.FromRuntimeSerialNumber(documentSerialNumber);
-        if (doc != null)
+        var docChanged = doc != null && documentSerialNumber != _lastSyncedDocSerial;
+
+        if (doc != null && docChanged)
         {
             _cardStore.CardsChanged -= OnCardsChanged;
             _cardStore = CardStore.LoadFromDocument(doc);
             _cardStore.CardsChanged += OnCardsChanged;
+            _lastSyncedDocSerial = documentSerialNumber;
         }
-        if (_uiReady) SendCards();
+
+        // Only push cards back to JS when the document actually changed
+        // (or on the very first show). Pure visibility changes — e.g. the
+        // user switching to another Rhino panel tab and back — leave the
+        // existing JS state intact, preserving in-progress uploads, the
+        // currently-selected project/model dropdowns, expanded cards, and
+        // any text the user has typed into "new project / new model".
+        if (_uiReady && docChanged) SendCards();
     }
 
     void IPanel.PanelHidden(uint documentSerialNumber, ShowPanelReason reason) { }
