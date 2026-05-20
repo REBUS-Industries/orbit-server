@@ -1,19 +1,12 @@
 <Project>
   <!--
-    ORBIT Connectors — build configuration
-    
-    To develop against local SDK source (recommended during active SDK development):
-      Set environment variable: ORBIT_SDK_LOCAL=1
-      OR uncomment UseLocalSdk below
-      Requires ORBIT-SDK repo cloned alongside this one at ../SDK/
-    
-    For CI / building against published NuGet packages:
-      Leave ORBIT_SDK_LOCAL unset (default)
+    Local development override.
+    Set OrbitSdkLocal=true so all projects in this solution reference the SDK
+    by project reference rather than a NuGet package.
+    OrbitSdkPath must point to the SDK src folder containing Orbit.Objects/ and Orbit.Sdk/.
   -->
   <PropertyGroup>
-    <!-- Uncomment to force local SDK project references: -->
-    <!-- <OrbitSdkLocal>true</OrbitSdkLocal> -->
-    <OrbitSdkLocal Condition="'$(ORBIT_SDK_LOCAL)' == '1'">true</OrbitSdkLocal>
-    <OrbitSdkPath Condition="'$(OrbitSdkPath)' == ''">$(MSBuildThisFileDirectory)..\SDK\src</OrbitSdkPath>
+    <OrbitSdkLocal>true</OrbitSdkLocal>
+    <OrbitSdkPath>D:\Documents\Claude\REBUS System\ORBIT\SDK\src</OrbitSdkPath>
   </PropertyGroup>
 </Project>

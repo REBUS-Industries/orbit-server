@@ -58,7 +58,10 @@ public class OrbitGraphQLClient
         var result = JObject.Parse(json);
 
         if (result["errors"] is JArray errors && errors.Count > 0)
-            throw new OrbitApiException(errors[0]["message"]?.Value<string>() ?? "GraphQL error");
+        {
+            var msgs = string.Join("; ", errors.Select(e => e["message"]?.Value<string>()));
+            throw new OrbitApiException($"GraphQL error: {msgs}");
+        }
 
         return result["data"] as JObject
             ?? throw new OrbitApiException("GraphQL response missing 'data'");

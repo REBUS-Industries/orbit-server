@@ -1,0 +1,4539 @@
+--- REBUS-Connector-Rhino/RebusConnector/Helpers/RhinoExport.cs ---
+using Rhino;
+using Rhino.FileIO;
+
+namespace RebusConnector.Helpers;
+
+/// <summary>
+/// Exports the current Rhino document (or a layer-filtered subset) to a
+/// temporary .3dm file that can be uploaded to 3DConvert.
+///
+/// The full document is always written — layer filtering is handled server-side
+/// via the <c>included_layers</c> parameter, which keeps this helper simple and
+/// ensures all material/texture definitions are present in the file.
+/// </summary>
+public static class RhinoExport
+{
+    /// <summary>
+    /// Writes the active Rhino document to a temp .3dm file.
+    /// Returns the path to the temp file (caller is responsible for deletion).
+    /// Throws if the write fails.
+    /// </summary>
+    /// <param name="doc">The active Rhino document.</param>
+    /// <param name="selectionOnly">
+    /// When <c>true</c>, only the objects currently selected in the active viewport
+    /// are written. Throws <see cref="InvalidOperationException"/> if nothing is selected.
+    /// </param>
+    public static string ExportCurrentDocTo3dm(RhinoDoc doc, bool selectionOnly = false)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "rebus_connector");
+        Directory.CreateDirectory(tempDir);
+
+        // Use the document name (or "untitled") so the 3DConvert service can
+        // show a friendly filename in the Speckle commit message.
+        var baseName = string.IsNullOrWhiteSpace(doc.Name)
+            ? "untitled"
+            : SanitizeFileName(Path.GetFileNameWithoutExtension(doc.Name));
+
+        var tempPath = Path.Combine(tempDir, $"{baseName}_{Guid.NewGuid():N}.3dm");
+
+        if (selectionOnly)
+        {
+            var selected = doc.Objects.GetSelectedObjects(false, false).ToArray();
+            if (selected.Length == 0)
+                throw new InvalidOperationException(
+                    "No objects are selected in the viewport.\n" +
+                    "Select the objects you want to export, then try again.");
+
+            var options = new FileWriteOptions
+            {
+                FileVersion              = 8,
+                WriteSelectedObjectsOnly = true,
+            };
+
+            if (!doc.WriteFile(tempPath, options))
+                throw new InvalidOperationException(
+                    "Rhino could not write the selected objects to a temporary file.");
+
+            return tempPath;
+        }
+
+        var fullOptions = new FileWriteOptions
+        {
+            FileVersion              = 8,
+            WriteSelectedObjectsOnly = false,
+        };
+
+        if (!doc.WriteFile(tempPath, fullOptions))
+            throw new InvalidOperationException(
+                "Rhino could not write the document to a temporary file.\n" +
+                "Make sure the document has geometry and is not in a broken state.");
+
+        return tempPath;
+    }
+
+    /// <summary>
+    /// Returns all layer full-paths in the current document.
+    /// Full-path uses '::' as the separator, matching Speckle / 3DConvert conventions.
+    /// </summary>
+    public static IReadOnlyList<(string FullPath, string DisplayName, int Depth)> GetLayerTree(RhinoDoc doc)
+    {
+        var result = new List<(string, string, int)>();
+
+        foreach (var layer in doc.Layers)
+        {
+            if (layer.IsDeleted) continue;
+
+            // Layer.FullPath returns "Parent::Child::GrandChild"
+            var fullPath    = layer.FullPath;
+            var depth       = fullPath.Split(new[] { "::" }, StringSplitOptions.None).Length - 1;
+            var displayName = layer.Name;
+
+            result.Add((fullPath, displayName, depth));
+        }
+
+        return result;
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var safe    = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "untitled" : safe;
+    }
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/Helpers/RhinoImport.cs ---
+using Rhino;
+using Rhino.DocObjects;
+using Rhino.FileIO;
+using Rhino.Geometry;
+
+namespace RebusConnector.Helpers;
+
+/// <summary>
+/// Imports geometry from a .3dm file into the active Rhino document,
+/// recreating the layer hierarchy and placing objects on matching layers.
+/// Existing geometry on those layers is NOT removed — new objects are added
+/// alongside existing ones.
+/// </summary>
+public static class RhinoImport
+{
+    /// <summary>
+    /// Reads <paramref name="path"/> and adds all objects to <paramref name="doc"/>.
+    /// Returns the count of imported objects.
+    /// </summary>
+    public static int ImportFile3dm(string path, RhinoDoc doc)
+    {
+        var file3dm = File3dm.Read(path)
+            ?? throw new InvalidOperationException($"Cannot read 3DM file: {path}");
+
+        // Build a full-path → doc-layer-index map as we go, so parent layers are
+        // only created once even if many objects share them.
+        var layerIndexCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        int imported = 0;
+
+        foreach (var obj in file3dm.Objects)
+        {
+            var geo = obj.Geometry;
+            if (geo == null) continue;
+
+            // Resolve the layer from the source file
+            var srcLayer = obj.Attributes.LayerIndex >= 0 &&
+                           obj.Attributes.LayerIndex < file3dm.AllLayers.Count
+                           ? file3dm.AllLayers.FindIndex(obj.Attributes.LayerIndex)
+                           : null;
+
+            var fullPath   = srcLayer?.FullPath ?? "Received";
+            var layerColor = srcLayer?.Color;
+
+            var attrs = new ObjectAttributes
+            {
+                LayerIndex = FindOrCreateLayer(doc, fullPath, layerColor, layerIndexCache),
+            };
+
+            doc.Objects.Add(geo, attrs);
+            imported++;
+        }
+
+        if (imported > 0)
+            doc.Views.Redraw();
+
+        return imported;
+    }
+
+    // ── Layer resolution ──────────────────────────────────────────────────────
+
+    private static int FindOrCreateLayer(
+        RhinoDoc doc,
+        string fullPath,
+        System.Drawing.Color? color,
+        Dictionary<string, int> cache)
+    {
+        if (cache.TryGetValue(fullPath, out var cached))
+            return cached;
+
+        // Check if it already exists in the document
+        var existing = doc.Layers.FindByFullPath(fullPath, -1);
+        if (existing >= 0)
+        {
+            cache[fullPath] = existing;
+            return existing;
+        }
+
+        // Build the hierarchy segment by segment (Rhino uses "::" as separator)
+        var parts       = fullPath.Split(new[] { "::" }, StringSplitOptions.RemoveEmptyEntries);
+        int parentIndex = -1;
+        string accumulated = "";
+
+        for (int i = 0; i < parts.Length; i++)
+        {
+            accumulated = i == 0 ? parts[i] : $"{accumulated}::{parts[i]}";
+
+            if (cache.TryGetValue(accumulated, out var ci))
+            {
+                parentIndex = ci;
+                continue;
+            }
+
+            int idx = doc.Layers.FindByFullPath(accumulated, -1);
+            if (idx < 0)
+            {
+                var layer = new Layer { Name = parts[i] };
+                if (parentIndex >= 0)
+                    layer.ParentLayerId = doc.Layers[parentIndex].Id;
+                if (i == parts.Length - 1 && color.HasValue)
+                    layer.Color = color.Value;
+
+                idx = doc.Layers.Add(layer);
+            }
+
+            cache[accumulated] = idx;
+            parentIndex = idx;
+        }
+
+        return parentIndex;
+    }
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/UI/RebusEtoPanel.cs ---
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Eto.Drawing;
+using Eto.Forms;
+using RebusConnector.Auth;
+using RebusConnector.Helpers;
+using RebusConnector.Models;
+using RebusConnector.Services;
+using Rhino;
+
+namespace RebusConnector.UI;
+
+/// <summary>
+/// REBUS Connector dockable panel — Speckle-v3-style UX.
+/// Navigation state machine: Home → CardConfig → SelectProject / SelectModel.
+/// </summary>
+[Guid("9f8b5432-3c01-4d24-8877-abcdef012345")]
+public class RebusEtoPanel : Eto.Forms.Panel
+{
+    // ── Brand palette ─────────────────────────────────────────────────────────
+
+    private Color BgMain       => _isDarkMode ? Color.FromArgb(15, 15, 15)    : Color.FromArgb(255, 255, 255);
+    private Color BgSection    => _isDarkMode ? Color.FromArgb(20, 20, 20)    : Color.FromArgb(245, 245, 245);
+    private Color BgInput      => _isDarkMode ? Color.FromArgb(26, 26, 26)    : Color.FromArgb(240, 240, 240);
+    private Color BgMid        => _isDarkMode ? Color.FromArgb(36, 36, 36)    : Color.FromArgb(224, 224, 224);
+    private Color BgCard       => BgSection;
+    private Color DividerColor => _isDarkMode ? Color.FromArgb(32, 32, 32)    : Color.FromArgb(226, 226, 226);
+    private static readonly Color Accent     = Color.FromArgb(209, 64, 31);
+    private static readonly Color ColReceive = Color.FromArgb(70, 150, 210);
+    private static readonly Color ColGreen   = Color.FromArgb(90, 190, 110);
+    private static readonly Color ColRed     = Color.FromArgb(210, 75, 65);
+    private Color TextHigh => _isDarkMode ? Color.FromArgb(242, 242, 242) : Color.FromArgb(17, 17, 17);
+    private Color TextMid  => _isDarkMode ? Color.FromArgb(148, 148, 148) : Color.FromArgb(85, 85, 85);
+    private Color TextLow  => _isDarkMode ? Color.FromArgb(72, 72, 72)    : Color.FromArgb(108, 108, 108);
+
+    // ── Fonts ─────────────────────────────────────────────────────────────────
+
+    private static Font Av(float size, bool bold = false) =>
+        new Font("Avenir Next", size, bold ? FontStyle.Bold : FontStyle.None);
+
+    // ── Named auth controls ───────────────────────────────────────────────────
+
+    private readonly TextBox _serverUrlBox = new() { Text = "https://speckle.rebus.industries" };
+    private readonly TextBox _patBox       = new() { PlaceholderText = "Paste personal access token" };
+    private readonly Button  _loginButton  = new() { Text = "LOG IN TO SPECKLE" };
+    private readonly Button  _patButton    = new() { Text = "USE TOKEN" };
+
+    private readonly Label  _accountNameLabel   = new() { Text = "User" };
+    private readonly Label  _serverDisplayLabel = new() { Text = "server" };
+    private readonly Button _logoutButton       = new() { Text = "LOG OUT" };
+
+    private readonly WebView _webView        = new();
+    private readonly Button  _cancelLoginBtn = new() { Text = "← CANCEL" };
+    private readonly Panel   _browserSection;
+    private readonly Panel   _loginSection;
+    private readonly Panel   _mainSection;
+
+    private readonly ProgressBar _progressBar   = new() { Indeterminate = true };
+    private readonly Label       _progressLabel = new();
+    private readonly Label       _errorLabel    = new();
+
+    // ── Theme state ───────────────────────────────────────────────────────────
+
+    private bool       _isDarkMode = true;
+    private ImageView? _logoView;
+    private Label?     _wordmarkLabel;
+
+    private readonly Label _themeToggleBtn = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        TextAlignment     = TextAlignment.Center,
+        Cursor            = Cursors.Pointer,
+    };
+
+    private readonly List<(Panel panel, Func<Color> colorFn)> _themedPanels = [];
+    private readonly List<(Label label, Func<Color> colorFn)> _themedLabels = [];
+
+    private int _baseThemedPanelsCount;
+    private int _baseThemedLabelsCount;
+
+    private Scrollable?  _rootScrollable;
+    private StackLayout? _rootContentStack;
+
+    // ── Navigation state machine ──────────────────────────────────────────────
+
+    private enum NavState { Home, CardConfig, SelectProject, SelectModel }
+    private NavState            _navState    = NavState.Home;
+    private ConnectorCard?      _editingCard;
+    private readonly Stack<NavState> _navHistory = new();
+    private Panel?              _contentPanel;
+
+    // ── Auth / session state ──────────────────────────────────────────────────
+
+    private string           _token     = string.Empty;
+    private string           _serverUrl = string.Empty;
+    private SpeckleGraphQL?  _graphql;
+    private CancellationTokenSource? _loginCts;
+
+    // ── Card store + per-card UI state ────────────────────────────────────────
+
+    private readonly CardStore _cardStore;
+    private readonly Dictionary<string, CardState> _cardStates = new();
+
+    private bool _rhinoSelectionSubscribed = false;
+    private bool _rhinoModifiedSubscribed  = false;
+
+    private readonly HashSet<string> _modifiedSincePublish = new();
+
+    private sealed class CardState
+    {
+        public List<SpeckleProject> Projects = new();
+        public List<SpeckleModel>   Models   = new();
+        public List<SpeckleVersion> Versions = new();
+        public List<LayerItem>      Layers   = new();
+        public Action?              OnSelectionChanged;
+
+        public string PendingMessage = "";
+
+        // Operation state (persists across screen rebuilds)
+        public bool    IsBusy    = false;
+        public string  BusyText  = "";
+        public string? LastError = null;
+        public string? LastResultUrl = null;
+
+        // Live refresh callbacks — set by current screen build, called to update in place
+        public Action? RefreshStatusBar    = null;
+        public Action? RefreshConfigStatus = null;
+    }
+
+    private CardState GetCardState(string id)
+    {
+        if (!_cardStates.TryGetValue(id, out var s))
+            _cardStates[id] = s = new CardState();
+        return s;
+    }
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public RebusEtoPanel(uint documentSerialNumber)
+    {
+        _ = documentSerialNumber;
+
+        try { _isDarkMode = TokenStore.ThemeMode != "light"; }
+        catch { _isDarkMode = true; }
+
+        ApplyControlStyles();
+
+        _loginSection   = BuildLoginSection();
+        _browserSection = BuildBrowserSection();
+        _mainSection    = BuildMainSection();
+        _browserSection.Visible = false;
+        _mainSection.Visible    = false;
+
+        var header = BuildHeader();
+
+        _rootContentStack = new StackLayout
+        {
+            BackgroundColor            = BgMain,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Items =
+            {
+                header,
+                Divider(),
+                _loginSection,
+                _browserSection,
+                _mainSection,
+            }
+        };
+
+        _rootScrollable = new Scrollable
+        {
+            ExpandContentWidth  = true,
+            ExpandContentHeight = false,
+            BackgroundColor     = BgMain,
+            Content             = _rootContentStack,
+        };
+
+        Content         = _rootScrollable;
+        BackgroundColor = BgMain;
+
+        _loginButton.Click        += OnLoginClick;
+        _cancelLoginBtn.Click     += OnCancelLoginClick;
+        _patButton.Click          += OnPatClick;
+        _logoutButton.Click       += OnLogoutClick;
+        _themeToggleBtn.MouseDown += (_, _) => OnThemeToggle(null, EventArgs.Empty);
+
+        InitStatusControls();
+
+        _baseThemedPanelsCount = _themedPanels.Count;
+        _baseThemedLabelsCount = _themedLabels.Count;
+
+        _cardStore = new CardStore();
+        _cardStore.CardsChanged += RebuildCardList;
+
+        try
+        {
+            _serverUrlBox.Text = TokenStore.ServerUrl;
+            TryRestoreSession();
+        }
+        catch { }
+    }
+
+    // ── Style helpers ─────────────────────────────────────────────────────────
+
+    private void ApplyControlStyles()
+    {
+        foreach (var box in new[] { _serverUrlBox, _patBox })
+        {
+            box.BackgroundColor = BgInput;
+            box.TextColor       = TextHigh;
+            box.Font            = Av(11f);
+        }
+
+        _loginButton.BackgroundColor = Accent;
+        _loginButton.TextColor       = Colors.White;
+        _loginButton.Font            = Av(10f, bold: true);
+        _loginButton.Height          = 36;
+
+        _patButton.BackgroundColor = BgMid;
+        _patButton.TextColor       = TextMid;
+        _patButton.Font            = Av(10f, bold: true);
+        _patButton.Height          = 30;
+
+        foreach (var btn in new[] { _cancelLoginBtn, _logoutButton })
+        {
+            btn.BackgroundColor = Colors.Transparent;
+            btn.TextColor       = TextMid;
+            btn.Font            = Av(10f);
+        }
+
+        _themeToggleBtn.TextColor = TextLow;
+        _themeToggleBtn.Font      = Av(14f);
+
+        _accountNameLabel.Font        = Av(11.5f, bold: true);
+        _accountNameLabel.TextColor   = TextHigh;
+        _serverDisplayLabel.Font      = Av(9.5f);
+        _serverDisplayLabel.TextColor = TextLow;
+
+        _progressLabel.Font      = Av(10f);
+        _progressLabel.TextColor = TextMid;
+        _errorLabel.Font         = Av(10f);
+        _errorLabel.TextColor    = ColRed;
+        _errorLabel.Wrap         = WrapMode.Word;
+    }
+
+    private void ApplyTheme()
+    {
+        foreach (var (p, fn) in _themedPanels) p.BackgroundColor = fn();
+        foreach (var (l, fn) in _themedLabels) l.TextColor       = fn();
+
+        if (_rootScrollable   != null) _rootScrollable.BackgroundColor   = BgMain;
+        if (_rootContentStack != null) _rootContentStack.BackgroundColor = BgMain;
+        BackgroundColor = BgMain;
+
+        ApplyControlStyles();
+
+        _themeToggleBtn.Text = _isDarkMode ? "☀" : "☽";
+
+        if (_logoView      != null) _logoView.Visible      = _isDarkMode;
+        if (_wordmarkLabel != null) _wordmarkLabel.Visible = !_isDarkMode;
+    }
+
+    private void OnThemeToggle(object? sender, EventArgs e)
+    {
+        _isDarkMode = !_isDarkMode;
+        TokenStore.ThemeMode = _isDarkMode ? "dark" : "light";
+        ApplyTheme();
+        RebuildCardList();
+    }
+
+    private void InitStatusControls()
+    {
+        _progressBar.Visible   = false;
+        _progressLabel.Visible = false;
+        _errorLabel.Visible    = false;
+    }
+
+    // ── Theme tracking helpers ────────────────────────────────────────────────
+
+    private Panel TrackPanel(Panel panel, Func<Color> colorFn)
+    {
+        _themedPanels.Add((panel, colorFn));
+        return panel;
+    }
+
+    private Label TrackLabel(Label label, Func<Color> colorFn)
+    {
+        _themedLabels.Add((label, colorFn));
+        return label;
+    }
+
+    // ── Layout primitives ─────────────────────────────────────────────────────
+
+    private Panel Divider() =>
+        TrackPanel(new Panel { Height = 1, BackgroundColor = DividerColor }, () => DividerColor);
+
+    private (RadioButton Radio, Control Pair) RadioPair(string text, RadioButton? group = null)
+    {
+        var radio = group == null
+            ? new RadioButton { Text = "" }
+            : new RadioButton(group) { Text = "" };
+
+        var lbl = TrackLabel(new Label
+        {
+            Text              = text,
+            Font              = Av(11f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => TextMid);
+
+        lbl.MouseDown += (_, _) => radio.Checked = true;
+
+        var pair = new StackLayout
+        {
+            Orientation              = Orientation.Horizontal,
+            Spacing                  = 2,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Items                    = { radio, lbl },
+        };
+
+        return (radio, pair);
+    }
+
+    private Label SectionLabel(string text) => TrackLabel(new Label
+    {
+        Text      = text,
+        Font      = Av(8.5f, bold: true),
+        TextColor = TextLow,
+    }, () => TextLow);
+
+    private Panel SectionHeader(string label, params Control[] right)
+    {
+        var actions = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 4 };
+        foreach (var c in right) actions.Items.Add(new StackLayoutItem(c, false));
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgSection,
+            Padding         = new Padding(16, 8, 12, 8),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(SectionLabel(label), true),
+                        new TableCell(actions, false)
+                    )
+                }
+            }
+        }, () => BgSection);
+    }
+
+    private Panel ContentPad(Control c, int topBottom = 10) =>
+        TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, topBottom),
+            Content         = c,
+        }, () => BgMain);
+
+    // ── Per-card control style helpers ────────────────────────────────────────
+
+    private void StyleInputBox(TextBox box)
+    {
+        box.BackgroundColor = BgInput;
+        box.TextColor       = TextHigh;
+        box.Font            = Av(11f);
+    }
+
+    private void StyleInputBox(DropDown combo)
+    {
+        combo.BackgroundColor = BgInput;
+        combo.TextColor       = TextHigh;
+        combo.Font            = Av(11f);
+    }
+
+    private void StyleRefreshButton(Button btn)
+    {
+        btn.BackgroundColor = Colors.Transparent;
+        btn.TextColor       = TextLow;
+        btn.Font            = Av(12f);
+        btn.Width           = 22;
+        btn.Height          = 22;
+    }
+
+    private void StylePlusButton(Button btn)
+    {
+        btn.BackgroundColor = Colors.Transparent;
+        btn.TextColor       = Accent;
+        btn.Font            = Av(14f, bold: true);
+        btn.Width           = 22;
+        btn.Height          = 22;
+    }
+
+    private void StyleCreateButton(Button btn)
+    {
+        btn.BackgroundColor = Accent;
+        btn.TextColor       = Colors.White;
+        btn.Font            = Av(10f, bold: true);
+        btn.Width           = 70;
+        btn.Height          = 30;
+    }
+
+    private void StyleCancelButton(Button btn)
+    {
+        btn.BackgroundColor = Colors.Transparent;
+        btn.TextColor       = TextLow;
+        btn.Font            = Av(13f);
+        btn.Width           = 24;
+        btn.Height          = 24;
+    }
+
+    private void StylePrimaryButton(Button btn)
+    {
+        btn.BackgroundColor = Accent;
+        btn.TextColor       = Colors.White;
+        btn.Font            = Av(10f, bold: true);
+        btn.Height          = 36;
+    }
+
+    private void StyleSecondaryButton(Button btn)
+    {
+        btn.BackgroundColor = BgMid;
+        btn.TextColor       = TextMid;
+        btn.Font            = Av(10f, bold: true);
+        btn.Height          = 28;
+    }
+
+    private void StyleGhostButton(Button btn)
+    {
+        btn.BackgroundColor = Colors.Transparent;
+        btn.TextColor       = TextMid;
+        btn.Font            = Av(13f);
+    }
+
+    private void StyleAccentButton(Button btn)
+    {
+        btn.BackgroundColor = Accent;
+        btn.TextColor       = Colors.White;
+        btn.Font            = Av(9.5f, bold: true);
+        btn.Height          = 26;
+    }
+
+    private void StyleReceiveButton(Button btn)
+    {
+        btn.BackgroundColor = ColReceive;
+        btn.TextColor       = Colors.White;
+        btn.Font            = Av(9.5f, bold: true);
+        btn.Height          = 26;
+    }
+
+    private void StyleMutedButton(Button btn)
+    {
+        btn.BackgroundColor = BgMid;
+        btn.TextColor       = TextMid;
+        btn.Font            = Av(9.5f);
+        btn.Height          = 26;
+    }
+
+    private static void PopulateCombo(DropDown combo, List<string> names, int selectedIndex)
+    {
+        combo.DataStore     = names;
+        combo.SelectedIndex = names.Count > 0
+            ? (selectedIndex >= 0 && selectedIndex < names.Count ? selectedIndex : 0)
+            : -1;
+    }
+
+    // ── Logo header ───────────────────────────────────────────────────────────
+
+    private Control BuildHeader()
+    {
+        try
+        {
+            const string res = "RebusConnector.Resources.rebus_logo.png";
+            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(res);
+            if (stream != null)
+            {
+                var bmp     = new Eto.Drawing.Bitmap(stream);
+                var targetH = 22;
+                var targetW = (int)((float)bmp.Width / bmp.Height * targetH);
+                _logoView   = new ImageView { Image = bmp, Size = new Size(targetW, targetH), Visible = _isDarkMode };
+            }
+        }
+        catch { }
+
+        _wordmarkLabel = TrackLabel(new Label
+        {
+            Text              = "R E B U S",
+            Font              = Av(14f),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visible           = !_isDarkMode,
+        }, () => TextHigh);
+
+        Control logoControl = new StackLayout
+        {
+            Orientation              = Orientation.Horizontal,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Items =
+            {
+                _logoView != null
+                    ? new StackLayoutItem(_logoView, false)
+                    : new StackLayoutItem(new Panel { Width = 0 }, false),
+                new StackLayoutItem(_wordmarkLabel, false),
+            }
+        };
+
+        var connectorLabel = TrackLabel(new Label
+        {
+            Text      = "CONNECTOR",
+            Font      = Av(8.5f),
+            TextColor = TextLow,
+        }, () => TextLow);
+
+        _themeToggleBtn.Text = _isDarkMode ? "☀" : "☽";
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 14, 16, 14),
+            Content         = new StackLayout
+            {
+                Orientation              = Orientation.Horizontal,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Spacing                  = 8,
+                Items =
+                {
+                    new StackLayoutItem(logoControl,     false),
+                    new StackLayoutItem(new Panel(),      true),
+                    new StackLayoutItem(connectorLabel,   false),
+                    new StackLayoutItem(_themeToggleBtn,  false),
+                }
+            }
+        }, () => BgMain);
+    }
+
+    private Label WordmarkFallback() => TrackLabel(new Label
+    {
+        Text      = "R E B U S",
+        Font      = Av(14f),
+        TextColor = TextHigh,
+    }, () => TextHigh);
+
+    // ── Login section ─────────────────────────────────────────────────────────
+
+    private Panel BuildLoginSection()
+    {
+        var patHintLabel = TrackLabel(new Label
+        {
+            Text      = "Generate a token at your server profile.",
+            Font      = Av(10f),
+            TextColor = TextLow,
+            Wrap      = WrapMode.Word,
+        }, () => TextLow);
+
+        var patContentPanel = TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(0, 10, 0, 10),
+            Content         = new StackLayout
+            {
+                Spacing                    = 8,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items                      = { patHintLabel, _patBox, _patButton }
+            }
+        }, () => BgMain);
+
+        var patWrapperPanel = TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 0),
+            Content         = new Expander
+            {
+                Header   = "Use a personal access token instead",
+                Expanded = false,
+                Content  = patContentPanel,
+            }
+        }, () => BgMain);
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new StackLayout
+            {
+                Spacing                    = 0,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items =
+                {
+                    SectionHeader("SERVER"),
+                    Divider(),
+                    ContentPad(new StackLayout
+                    {
+                        Spacing                    = 10,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Items                      = { _serverUrlBox, _loginButton }
+                    }),
+                    Divider(),
+                    patWrapperPanel,
+                    Divider(),
+                    ContentPad(_progressBar,   8),
+                    ContentPad(_progressLabel, 4),
+                    ContentPad(_errorLabel,    8),
+                }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Browser section ───────────────────────────────────────────────────────
+
+    private Panel BuildBrowserSection()
+    {
+        _webView.Size = new Size(-1, 500);
+
+        var browserHintLabel = TrackLabel(new Label
+        {
+            Text              = "Log in, then return here automatically.",
+            Font              = Av(10f),
+            TextColor         = TextLow,
+            Wrap              = WrapMode.Word,
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => TextLow);
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new StackLayout
+            {
+                Spacing                    = 8,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items =
+                {
+                    new TableLayout
+                    {
+                        Rows =
+                        {
+                            new TableRow(
+                                new TableCell(_cancelLoginBtn,  false),
+                                new TableCell(browserHintLabel, true)
+                            )
+                        }
+                    },
+                    new StackLayoutItem(_webView, HorizontalAlignment.Stretch, true),
+                }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Main section — account row + swappable content panel ─────────────────
+
+    private Panel BuildMainSection()
+    {
+        var accountRow = TrackPanel(new Panel
+        {
+            BackgroundColor = BgSection,
+            Padding         = new Padding(16, 10, 12, 10),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(new StackLayout
+                        {
+                            Spacing = 2,
+                            Items   = { _accountNameLabel, _serverDisplayLabel }
+                        }, true),
+                        new TableCell(_logoutButton, false)
+                    )
+                }
+            }
+        }, () => BgSection);
+
+        _contentPanel = TrackPanel(new Panel { BackgroundColor = BgMain }, () => BgMain);
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new StackLayout
+            {
+                Spacing                    = 0,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items =
+                {
+                    accountRow,
+                    Divider(),
+                    new StackLayoutItem(_contentPanel, true),
+                }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────────────
+
+    private void NavigateTo(NavState state, ConnectorCard? card = null)
+    {
+        _navHistory.Push(_navState);
+        _navState    = state;
+        if (card != null) _editingCard = card;
+        SwapContent();
+    }
+
+    private void NavigateBack()
+    {
+        _navState = _navHistory.Count > 0 ? _navHistory.Pop() : NavState.Home;
+        SwapContent();
+    }
+
+    private void GoHome()
+    {
+        _navHistory.Clear();
+        _navState = NavState.Home;
+        SwapContent();
+    }
+
+    private void SwapContent()
+    {
+        if (_contentPanel == null) return;
+        Application.Instance.Invoke(() =>
+        {
+            TrimThemedLists();
+            _contentPanel.Content = _navState switch
+            {
+                NavState.CardConfig    => BuildCardConfigScreen(_editingCard!),
+                NavState.SelectProject => BuildSelectProjectScreen(_editingCard!),
+                NavState.SelectModel   => BuildSelectModelScreen(_editingCard!),
+                _                     => BuildHomeScreen(),
+            };
+        });
+    }
+
+    private void TrimThemedLists()
+    {
+        if (_themedPanels.Count > _baseThemedPanelsCount)
+            _themedPanels.RemoveRange(_baseThemedPanelsCount, _themedPanels.Count - _baseThemedPanelsCount);
+        if (_themedLabels.Count > _baseThemedLabelsCount)
+            _themedLabels.RemoveRange(_baseThemedLabelsCount, _themedLabels.Count - _baseThemedLabelsCount);
+    }
+
+    private void RebuildCardList() => Application.Instance.Invoke(() =>
+    {
+        if (_navState == NavState.Home)
+            SwapContent();
+        ManageRhinoSelectionSubscription();
+        ManageRhinoModifiedSubscription();
+    });
+
+    // ── Home screen ───────────────────────────────────────────────────────────
+
+    private Control BuildHomeScreen()
+    {
+        var cards = _cardStore.Cards;
+
+        var outerStack = new StackLayout
+        {
+            Spacing                    = 0,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+
+        outerStack.Items.Add(new StackLayoutItem(BuildActionBar(), HorizontalAlignment.Stretch));
+        outerStack.Items.Add(new StackLayoutItem(Divider(),        HorizontalAlignment.Stretch));
+
+        if (cards.Count == 0)
+        {
+            var helloLabel = TrackLabel(new Label
+            {
+                Text      = "Hello!",
+                Font      = Av(16f, bold: true),
+                TextColor = TextHigh,
+            }, () => TextHigh);
+
+            var hintLabel = TrackLabel(new Label
+            {
+                Text      = "There are no REBUS models being published or\nloaded in this file yet.",
+                Font      = Av(10.5f),
+                TextColor = TextLow,
+                Wrap      = WrapMode.Word,
+            }, () => TextLow);
+
+            outerStack.Items.Add(new StackLayoutItem(
+                ContentPad(new StackLayout { Spacing = 8, Items = { helloLabel, hintLabel } }, 24),
+                HorizontalAlignment.Stretch));
+        }
+        else
+        {
+            for (int i = 0; i < cards.Count; i++)
+            {
+                if (i > 0)
+                    outerStack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+                outerStack.Items.Add(new StackLayoutItem(BuildCompactCard(cards[i]), HorizontalAlignment.Stretch));
+            }
+        }
+
+        ManageRhinoSelectionSubscription();
+        ManageRhinoModifiedSubscription();
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new Scrollable
+            {
+                ExpandContentWidth  = true,
+                ExpandContentHeight = false,
+                BackgroundColor     = BgMain,
+                Content             = outerStack,
+            }
+        }, () => BgMain);
+    }
+
+    // ── Action bar ────────────────────────────────────────────────────────────
+
+    private Panel BuildActionBar()
+    {
+        var publishBtn = new Button { Text = "↑  Publish", Height = 32 };
+        publishBtn.BackgroundColor = Accent;
+        publishBtn.TextColor       = Colors.White;
+        publishBtn.Font            = Av(10f, bold: true);
+
+        var loadBtn = new Button { Text = "↓  Load", Height = 32 };
+        loadBtn.BackgroundColor = BgMid;
+        loadBtn.TextColor       = TextMid;
+        loadBtn.Font            = Av(10f, bold: true);
+
+        publishBtn.Click += (_, _) =>
+        {
+            var card = new ConnectorCard { Type = CardType.Send };
+            _cardStore.Add(card);
+            NavigateTo(NavState.CardConfig, card);
+        };
+
+        loadBtn.Click += (_, _) =>
+        {
+            var card = new ConnectorCard { Type = CardType.Receive };
+            _cardStore.Add(card);
+            NavigateTo(NavState.CardConfig, card);
+        };
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 10),
+            Content         = new StackLayout
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing     = 10,
+                Items =
+                {
+                    new StackLayoutItem(publishBtn, false),
+                    new StackLayoutItem(loadBtn,    false),
+                }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Compact card ──────────────────────────────────────────────────────────
+
+    private Control BuildCompactCard(ConnectorCard card)
+    {
+        bool isSend = card.Type == CardType.Send;
+        var  state  = GetCardState(card.Id);
+
+        var typeIcon = new Label
+        {
+            Text              = isSend ? "↑" : "↓",
+            Font              = Av(13f, bold: true),
+            TextColor         = isSend ? Accent : ColReceive,
+            VerticalAlignment = VerticalAlignment.Center,
+            Width             = 18,
+        };
+
+        var titleLabel = TrackLabel(new Label
+        {
+            Text              = GetCardTitle(card),
+            Font              = Av(11f, bold: true),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => TextHigh);
+
+        var subtitleLabel = TrackLabel(new Label
+        {
+            Text              = GetObjectSummary(card),
+            Font              = Av(9.5f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => TextLow);
+
+        var gearBtn = new Button { Text = "⚙", Width = 28, Height = 28 };
+        StyleGhostButton(gearBtn);
+
+        var menuBtn = new Button { Text = "≡", Width = 28, Height = 28 };
+        StyleGhostButton(menuBtn);
+
+        var headerLeft = new StackLayout
+        {
+            Orientation              = Orientation.Horizontal,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Spacing                  = 6,
+            Items =
+            {
+                new StackLayoutItem(typeIcon,   false),
+                new StackLayoutItem(titleLabel, false),
+            }
+        };
+
+        var headerRow = TrackPanel(new Panel
+        {
+            BackgroundColor = BgSection,
+            Padding         = new Padding(16, 8, 8, 4),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(headerLeft, true),
+                        new TableCell(new Panel { Width = 4 }),
+                        new TableCell(gearBtn, false),
+                        new TableCell(menuBtn, false)
+                    )
+                }
+            }
+        }, () => BgSection);
+
+        var subtitleRow = TrackPanel(new Panel
+        {
+            BackgroundColor = BgSection,
+            Padding         = new Padding(40, 0, 16, 8),
+            Content         = subtitleLabel,
+        }, () => BgSection);
+
+        var statusBar = BuildCardStatusBar(card, state);
+
+        void OpenConfig() => NavigateTo(NavState.CardConfig, card);
+
+        headerLeft.MouseDown += (_, _) => OpenConfig();
+        headerRow.MouseDown  += (_, _) => OpenConfig();
+        gearBtn.Click        += (_, _) => OpenConfig();
+
+        menuBtn.Click += (_, _) =>
+        {
+            var menu = new ContextMenu();
+
+            var settingsItem = new ButtonMenuItem { Text = "Settings" };
+            settingsItem.Click += (_, _) => OpenConfig();
+            menu.Items.Add(settingsItem);
+
+            if (!string.IsNullOrEmpty(state.LastResultUrl))
+            {
+                var viewItem = new ButtonMenuItem { Text = "View model in browser" };
+                viewItem.Click += (_, _) =>
+                    Process.Start(new ProcessStartInfo(state.LastResultUrl) { UseShellExecute = true });
+                menu.Items.Add(viewItem);
+            }
+
+            var sep    = new SeparatorMenuItem();
+            var remove = new ButtonMenuItem { Text = "Remove from file" };
+            remove.Click += (_, _) =>
+            {
+                _cardStates.Remove(card.Id);
+                _modifiedSincePublish.Remove(card.Id);
+                _cardStore.Remove(card.Id);
+                ManageRhinoSelectionSubscription();
+                ManageRhinoModifiedSubscription();
+            };
+            menu.Items.Add(sep);
+            menu.Items.Add(remove);
+
+            menu.Show(menuBtn);
+        };
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new StackLayout
+            {
+                Spacing                    = 0,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items                      = { headerRow, subtitleRow, Divider(), statusBar }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Card status bar ───────────────────────────────────────────────────────
+
+    private Panel BuildCardStatusBar(ConnectorCard card, CardState state)
+    {
+        bool isSend    = card.Type == CardType.Send;
+        var  container = TrackPanel(new Panel
+        {
+            BackgroundColor = BgSection,
+            Padding         = new Padding(16, 8, 12, 10),
+        }, () => BgSection);
+
+        void Refresh()
+        {
+            Application.Instance.Invoke(() =>
+            {
+                Control content;
+
+                if (state.IsBusy)
+                {
+                    var bar = new ProgressBar { Indeterminate = true, Height = 4 };
+                    var lbl = new Label { Text = state.BusyText, Font = Av(9.5f), TextColor = TextLow };
+                    content = new StackLayout
+                    {
+                        Spacing = 4,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Items   = { bar, lbl }
+                    };
+                }
+                else if (!string.IsNullOrEmpty(state.LastError))
+                {
+                    content = new Label
+                    {
+                        Text      = state.LastError,
+                        Font      = Av(9.5f),
+                        TextColor = ColRed,
+                        Wrap      = WrapMode.Word,
+                    };
+                }
+                else if (isSend)
+                {
+                    bool neverSent  = card.LastSentAt == null;
+                    bool outOfSync  = !neverSent && _modifiedSincePublish.Contains(card.Id);
+
+                    if (neverSent)
+                    {
+                        var lbl = new Label { Text = "Not published yet", Font = Av(9.5f), TextColor = TextLow, VerticalAlignment = VerticalAlignment.Center };
+                        var btn = new Button { Text = "Publish" };
+                        StyleAccentButton(btn);
+                        btn.Click += (_, _) => _ = DoPublish(card);
+                        content = new TableLayout
+                        {
+                            Rows = { new TableRow(new TableCell(lbl, true), new TableCell(btn, false)) }
+                        };
+                    }
+                    else if (outOfSync)
+                    {
+                        var lbl = new Label { Text = "Out of sync with application", Font = Av(9.5f), TextColor = TextMid, VerticalAlignment = VerticalAlignment.Center };
+                        var btn = new Button { Text = "Update" };
+                        StyleAccentButton(btn);
+                        btn.Click += (_, _) => _ = DoPublish(card);
+                        content = new TableLayout
+                        {
+                            Rows = { new TableRow(new TableCell(lbl, true), new TableCell(btn, false)) }
+                        };
+                    }
+                    else
+                    {
+                        var successLbl = new Label { Text = "✓ Version created!", Font = Av(9.5f), TextColor = ColGreen, VerticalAlignment = VerticalAlignment.Center };
+                        var setMsgBtn  = new Button { Text = "Set message" };
+                        var viewBtn    = new Button { Text = "View" };
+                        StyleMutedButton(setMsgBtn);
+                        StyleMutedButton(viewBtn);
+                        setMsgBtn.Click += (_, _) => NavigateTo(NavState.CardConfig, card);
+                        if (!string.IsNullOrEmpty(state.LastResultUrl))
+                            viewBtn.Click += (_, _) =>
+                                Process.Start(new ProcessStartInfo(state.LastResultUrl) { UseShellExecute = true });
+                        else
+                            viewBtn.Enabled = false;
+                        content = new StackLayout
+                        {
+                            Orientation              = Orientation.Horizontal,
+                            Spacing                  = 8,
+                            VerticalContentAlignment = VerticalAlignment.Center,
+                            Items =
+                            {
+                                new StackLayoutItem(successLbl, true),
+                                new StackLayoutItem(setMsgBtn,  false),
+                                new StackLayoutItem(viewBtn,    false),
+                            }
+                        };
+                    }
+                }
+                else // receive card
+                {
+                    if (card.LastReceivedAt == null)
+                    {
+                        var lbl = new Label { Text = "Not loaded yet", Font = Av(9.5f), TextColor = TextLow, VerticalAlignment = VerticalAlignment.Center };
+                        var btn = new Button { Text = "Load" };
+                        StyleReceiveButton(btn);
+                        btn.Click += (_, _) => _ = DoLoad(card);
+                        content = new TableLayout
+                        {
+                            Rows = { new TableRow(new TableCell(lbl, true), new TableCell(btn, false)) }
+                        };
+                    }
+                    else
+                    {
+                        var successLbl = new Label { Text = "✓ Loaded", Font = Av(9.5f), TextColor = ColGreen, VerticalAlignment = VerticalAlignment.Center };
+                        var viewBtn    = new Button { Text = "View" };
+                        StyleMutedButton(viewBtn);
+                        if (!string.IsNullOrEmpty(state.LastResultUrl))
+                            viewBtn.Click += (_, _) =>
+                                Process.Start(new ProcessStartInfo(state.LastResultUrl) { UseShellExecute = true });
+                        else
+                            viewBtn.Enabled = false;
+                        content = new StackLayout
+                        {
+                            Orientation              = Orientation.Horizontal,
+                            Spacing                  = 8,
+                            VerticalContentAlignment = VerticalAlignment.Center,
+                            Items =
+                            {
+                                new StackLayoutItem(successLbl, true),
+                                new StackLayoutItem(viewBtn,    false),
+                            }
+                        };
+                    }
+                }
+
+                container.Content = content;
+            });
+        }
+
+        state.RefreshStatusBar = Refresh;
+        Refresh();
+
+        return container;
+    }
+
+    // ── Card config screen ────────────────────────────────────────────────────
+
+    private Control BuildCardConfigScreen(ConnectorCard card)
+    {
+        bool isSend = card.Type == CardType.Send;
+        var  state  = GetCardState(card.Id);
+
+        var backBtn  = new Button { Text = "← Back" };
+        var closeBtn = new Button { Text = "✕" };
+        StyleGhostButton(backBtn);
+        StyleGhostButton(closeBtn);
+        backBtn.Click  += (_, _) => NavigateBack();
+        closeBtn.Click += (_, _) => GoHome();
+
+        var navHeader = TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(8, 8, 12, 4),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(backBtn,       false),
+                        new TableCell(new Panel(),    true),
+                        new TableCell(closeBtn,       false)
+                    )
+                }
+            }
+        }, () => BgMain);
+
+        var bodyStack = new StackLayout
+        {
+            Spacing                    = 0,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+
+        bodyStack.Items.Add(new StackLayoutItem(navHeader, HorizontalAlignment.Stretch));
+        bodyStack.Items.Add(new StackLayoutItem(Divider(),  HorizontalAlignment.Stretch));
+
+        if (isSend)
+            BuildSendConfigBody(card, state, bodyStack);
+        else
+            BuildReceiveConfigBody(card, state, bodyStack);
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Content         = new Scrollable
+            {
+                ExpandContentWidth  = true,
+                ExpandContentHeight = false,
+                BackgroundColor     = BgMain,
+                Content             = bodyStack,
+            }
+        }, () => BgMain);
+    }
+
+    // ── Send config body ──────────────────────────────────────────────────────
+
+    private void BuildSendConfigBody(ConnectorCard card, CardState state, StackLayout stack)
+    {
+        // ── Mode dropdown ─────────────────────────────────────────────────────
+
+        var modeDropDown = new DropDown();
+        StyleInputBox(modeDropDown);
+        modeDropDown.DataStore     = new[] { "Selection", "Layers", "All layers" };
+        modeDropDown.SelectedIndex = card.LayerMode switch
+        {
+            "selection" => 0,
+            "select"    => 1,
+            _           => 2,
+        };
+
+        stack.Items.Add(new StackLayoutItem(ContentPad(modeDropDown, 8), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        // ── Dynamic content area ──────────────────────────────────────────────
+
+        var contentArea = TrackPanel(new Panel { BackgroundColor = BgMain }, () => BgMain);
+
+        // Layer checklist controls
+        var layerStack  = new StackLayout { Spacing = 0, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        var layerSearch = new TextBox { PlaceholderText = "Search layers…" };
+        StyleInputBox(layerSearch);
+        var layerScroll = new Scrollable
+        {
+            Height             = 160,
+            ExpandContentWidth = true,
+            BackgroundColor    = BgMain,
+            Content            = layerStack,
+        };
+
+        // Labels for selection / all-layers count
+        var selCountLabel = TrackLabel(new Label { Font = Av(10f), TextColor = TextMid }, () => TextMid);
+        var allCountLabel = TrackLabel(new Label { Font = Av(10f), TextColor = TextMid }, () => TextMid);
+
+        void RefreshLayers()
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+
+            state.Layers.Clear();
+            layerStack.Items.Clear();
+
+            var siblingLayers = _cardStore.GetSiblingLayers(card.Id, card.ModelId);
+            var rows          = RhinoExport.GetLayerTree(doc).ToList();
+            var filter        = layerSearch.Text.Trim().ToLowerInvariant();
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var (fullPath, displayName, depth) = rows[i];
+                if (!string.IsNullOrEmpty(filter) &&
+                    !displayName.ToLowerInvariant().Contains(filter))
+                    continue;
+
+                var item = new LayerItem { FullPath = fullPath, DisplayName = displayName, Depth = depth };
+                item.IsSelected = card.IncludedLayers.Count == 0 || card.IncludedLayers.Contains(fullPath);
+                state.Layers.Add(item);
+
+                var cb = new CheckBox
+                {
+                    Text      = displayName,
+                    Checked   = item.IsSelected,
+                    Font      = Av(10.5f),
+                    TextColor = TextMid,
+                };
+
+                var captured = item;
+                cb.CheckedChanged += (_, _) =>
+                {
+                    captured.IsSelected = cb.Checked == true;
+                    card.IncludedLayers = state.Layers.Where(l => l.IsSelected).Select(l => l.FullPath).ToList();
+                    _cardStore.UpdateQuiet(card);
+                };
+
+                Control rowContent;
+                if (siblingLayers.Contains(fullPath))
+                {
+                    var dot = new Label
+                    {
+                        Text              = "●",
+                        TextColor         = ColGreen,
+                        Font              = Av(10f),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        ToolTip           = "Already in another publish group for this model",
+                    };
+                    rowContent = new StackLayout
+                    {
+                        Orientation              = Orientation.Horizontal,
+                        Spacing                  = 4,
+                        VerticalContentAlignment = VerticalAlignment.Center,
+                        Items                    = { dot, cb },
+                    };
+                }
+                else
+                {
+                    rowContent = cb;
+                }
+
+                layerStack.Items.Add(new StackLayoutItem(new Panel
+                {
+                    Padding         = new Padding(depth * 14, 3, 0, 3),
+                    BackgroundColor = i % 2 == 0 ? BgCard : BgMain,
+                    Content         = rowContent,
+                }, HorizontalAlignment.Stretch));
+            }
+        }
+
+        void RefreshObjectCount()
+        {
+            var summary = GetObjectSummary(card);
+            Application.Instance.Invoke(() =>
+            {
+                selCountLabel.Text = summary;
+                allCountLabel.Text = summary;
+            });
+        }
+
+        state.OnSelectionChanged = RefreshObjectCount;
+
+        void UpdateContentArea()
+        {
+            card.LayerMode = modeDropDown.SelectedIndex switch
+            {
+                0 => "selection",
+                1 => "select",
+                _ => "all",
+            };
+            _cardStore.UpdateQuiet(card);
+
+            switch (modeDropDown.SelectedIndex)
+            {
+                case 0:
+                    RefreshObjectCount();
+                    contentArea.Content = ContentPad(selCountLabel, 10);
+                    break;
+                case 1:
+                    RefreshLayers();
+                    contentArea.Content = ContentPad(new StackLayout
+                    {
+                        Spacing                    = 6,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Items                      = { layerSearch, layerScroll }
+                    }, 8);
+                    break;
+                default:
+                    RefreshObjectCount();
+                    contentArea.Content = ContentPad(allCountLabel, 10);
+                    break;
+            }
+        }
+
+        modeDropDown.SelectedIndexChanged += (_, _) => UpdateContentArea();
+        layerSearch.TextChanged           += (_, _) => RefreshLayers();
+        UpdateContentArea();
+
+        stack.Items.Add(new StackLayoutItem(contentArea, HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(),   HorizontalAlignment.Stretch));
+
+        // ── Settings section ──────────────────────────────────────────────────
+
+        stack.Items.Add(new StackLayoutItem(SectionHeader("SETTINGS"), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        // Project row
+        var projNameLbl = TrackLabel(new Label
+        {
+            Text              = string.IsNullOrEmpty(card.ProjectName) ? "Select a project…" : card.ProjectName,
+            Font              = Av(11f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => string.IsNullOrEmpty(card.ProjectName) ? TextLow : TextHigh);
+
+        var projectRow = BuildSettingsRow("Project", projNameLbl);
+        projectRow.MouseDown += (_, _) =>
+        {
+            if (state.Projects.Count == 0 && _graphql != null)
+                _ = LoadProjectsAsync(state);
+            NavigateTo(NavState.SelectProject, card);
+        };
+
+        stack.Items.Add(new StackLayoutItem(projectRow, HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(),  HorizontalAlignment.Stretch));
+
+        // Model row
+        var modelNameLbl = TrackLabel(new Label
+        {
+            Text              = string.IsNullOrEmpty(card.ModelName) ? "Select a model…" : card.ModelName,
+            Font              = Av(11f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => string.IsNullOrEmpty(card.ModelName) ? TextLow : TextHigh);
+
+        var modelRow = BuildSettingsRow("Model", modelNameLbl);
+        modelRow.MouseDown += (_, _) =>
+        {
+            if (!string.IsNullOrEmpty(card.ProjectId) && state.Models.Count == 0 && _graphql != null)
+                _ = LoadModelsAsync(state, card);
+            NavigateTo(NavState.SelectModel, card);
+        };
+
+        stack.Items.Add(new StackLayoutItem(modelRow, HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        // Message
+        var messageBox = new TextBox { PlaceholderText = "Optional version message", Text = state.PendingMessage };
+        StyleInputBox(messageBox);
+        messageBox.TextChanged += (_, _) => state.PendingMessage = messageBox.Text;
+
+        stack.Items.Add(new StackLayoutItem(TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 8),
+            Content         = new StackLayout
+            {
+                Spacing                    = 4,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items                      = { SectionLabel("MESSAGE"), messageBox }
+            }
+        }, () => BgMain), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+#if INCLUDE_DEV_TARGET
+        var (prodRadio, prodRadioPair) = RadioPair("Production");
+        var (devRadio,  devRadioPair)  = RadioPair("Development", prodRadio);
+        prodRadio.Checked = card.Target != "dev";
+        devRadio.Checked  = card.Target == "dev";
+        prodRadio.CheckedChanged += (_, _) => { card.Target = "prod"; _cardStore.UpdateQuiet(card); };
+        devRadio.CheckedChanged  += (_, _) => { card.Target = "dev";  _cardStore.UpdateQuiet(card); };
+
+        stack.Items.Add(new StackLayoutItem(SectionHeader("TARGET"), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(ContentPad(new StackLayout
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing     = 20,
+            Items       = { prodRadioPair, devRadioPair },
+        }), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+#endif
+
+        // ── Publish button + config status ────────────────────────────────────
+
+        var publishBtn    = new Button { Text = "Publish" };
+        var configStatus  = TrackPanel(new Panel { BackgroundColor = BgMain }, () => BgMain);
+        StylePrimaryButton(publishBtn);
+
+        void RefreshConfigStatus()
+        {
+            Application.Instance.Invoke(() =>
+            {
+                if (state.IsBusy)
+                {
+                    publishBtn.Enabled = false;
+                    var bar = new ProgressBar { Indeterminate = true };
+                    var lbl = new Label { Text = state.BusyText, Font = Av(10f), TextColor = TextMid };
+                    configStatus.Content = ContentPad(new StackLayout
+                    {
+                        Spacing                    = 4,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Items                      = { bar, lbl }
+                    }, 8);
+                }
+                else
+                {
+                    publishBtn.Enabled = true;
+                    configStatus.Content = string.IsNullOrEmpty(state.LastError)
+                        ? new Panel()
+                        : ContentPad(new Label { Text = state.LastError, Font = Av(10f), TextColor = ColRed, Wrap = WrapMode.Word }, 8);
+                }
+            });
+        }
+
+        state.RefreshConfigStatus = RefreshConfigStatus;
+        RefreshConfigStatus();
+
+        publishBtn.Click += (_, _) => _ = DoPublish(card);
+
+        stack.Items.Add(new StackLayoutItem(ContentPad(publishBtn, 12), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(),               HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(configStatus,            HorizontalAlignment.Stretch));
+
+        ManageRhinoSelectionSubscription();
+    }
+
+    // ── Receive config body ────────────────────────────────────────────────���──
+
+    private void BuildReceiveConfigBody(ConnectorCard card, CardState state, StackLayout stack)
+    {
+        stack.Items.Add(new StackLayoutItem(SectionHeader("SETTINGS"), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        // Project row
+        var projNameLbl = TrackLabel(new Label
+        {
+            Text              = string.IsNullOrEmpty(card.ProjectName) ? "Select a project…" : card.ProjectName,
+            Font              = Av(11f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => string.IsNullOrEmpty(card.ProjectName) ? TextLow : TextHigh);
+
+        var projectRow = BuildSettingsRow("Project", projNameLbl);
+        projectRow.MouseDown += (_, _) =>
+        {
+            if (state.Projects.Count == 0 && _graphql != null)
+                _ = LoadProjectsAsync(state);
+            NavigateTo(NavState.SelectProject, card);
+        };
+
+        stack.Items.Add(new StackLayoutItem(projectRow, HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(),  HorizontalAlignment.Stretch));
+
+        // Model row
+        var modelNameLbl = TrackLabel(new Label
+        {
+            Text              = string.IsNullOrEmpty(card.ModelName) ? "Select a model…" : card.ModelName,
+            Font              = Av(11f),
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => string.IsNullOrEmpty(card.ModelName) ? TextLow : TextHigh);
+
+        var modelRow = BuildSettingsRow("Model", modelNameLbl);
+        modelRow.MouseDown += (_, _) =>
+        {
+            if (!string.IsNullOrEmpty(card.ProjectId) && state.Models.Count == 0 && _graphql != null)
+                _ = LoadModelsAsync(state, card);
+            NavigateTo(NavState.SelectModel, card);
+        };
+
+        stack.Items.Add(new StackLayoutItem(modelRow, HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        // Version section
+        var (latestRadio,   latestPair)   = RadioPair("Latest");
+        var (specificRadio, specificPair) = RadioPair("Specific version", latestRadio);
+        latestRadio.Checked   = string.IsNullOrEmpty(card.PinnedVersionId);
+        specificRadio.Checked = !string.IsNullOrEmpty(card.PinnedVersionId);
+
+        var versionCombo      = new DropDown { Visible = !string.IsNullOrEmpty(card.PinnedVersionId) };
+        var refreshVersionBtn = new Button   { Text = "↻", Visible = !string.IsNullOrEmpty(card.PinnedVersionId) };
+        StyleInputBox(versionCombo);
+        StyleRefreshButton(refreshVersionBtn);
+
+        async Task DoRefreshVersions()
+        {
+            if (_graphql == null || string.IsNullOrEmpty(card.ProjectId) || string.IsNullOrEmpty(card.ModelName)) return;
+            Application.Instance.Invoke(() => refreshVersionBtn.Enabled = false);
+            try
+            {
+                var vers = await _graphql.GetVersionsAsync(card.ProjectId, card.ModelName);
+                state.Versions = vers;
+                Application.Instance.Invoke(() =>
+                    PopulateCombo(versionCombo,
+                        vers.Select(v => v.DisplayName).ToList(),
+                        vers.FindIndex(v => v.Id == card.PinnedVersionId)));
+            }
+            catch { }
+            finally { Application.Instance.Invoke(() => refreshVersionBtn.Enabled = true); }
+        }
+
+        if (state.Versions.Count > 0 && specificRadio.Checked)
+            PopulateCombo(versionCombo,
+                state.Versions.Select(v => v.DisplayName).ToList(),
+                state.Versions.FindIndex(v => v.Id == card.PinnedVersionId));
+
+        versionCombo.SelectedValueChanged += (_, _) =>
+        {
+            var idx = versionCombo.SelectedIndex;
+            if (idx >= 0 && idx < state.Versions.Count)
+            {
+                card.PinnedVersionId = state.Versions[idx].Id;
+                _cardStore.UpdateQuiet(card);
+            }
+        };
+
+        specificRadio.CheckedChanged += (_, _) =>
+        {
+            bool specific             = specificRadio.Checked;
+            versionCombo.Visible      = specific;
+            refreshVersionBtn.Visible = specific;
+            card.PinnedVersionId      = specific ? (card.PinnedVersionId ?? "") : null;
+            if (specific && state.Versions.Count == 0) _ = DoRefreshVersions();
+        };
+
+        latestRadio.CheckedChanged += (_, _) =>
+        {
+            if (latestRadio.Checked)
+            {
+                versionCombo.Visible      = false;
+                refreshVersionBtn.Visible = false;
+                card.PinnedVersionId      = null;
+            }
+        };
+
+        refreshVersionBtn.Click += (_, _) => _ = DoRefreshVersions();
+
+        stack.Items.Add(new StackLayoutItem(SectionHeader("VERSION", refreshVersionBtn), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(ContentPad(new StackLayout
+        {
+            Spacing                    = 6,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Items =
+            {
+                new StackLayout
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing     = 16,
+                    Items       = { latestPair, specificPair },
+                },
+                versionCombo,
+            }
+        }), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+#if INCLUDE_DEV_TARGET
+        var (prodRadio, prodRadioPair) = RadioPair("Production");
+        var (devRadio,  devRadioPair)  = RadioPair("Development", prodRadio);
+        prodRadio.Checked = card.Target != "dev";
+        devRadio.Checked  = card.Target == "dev";
+        prodRadio.CheckedChanged += (_, _) => { card.Target = "prod"; _cardStore.UpdateQuiet(card); };
+        devRadio.CheckedChanged  += (_, _) => { card.Target = "dev";  _cardStore.UpdateQuiet(card); };
+
+        stack.Items.Add(new StackLayoutItem(SectionHeader("TARGET"), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(ContentPad(new StackLayout
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing     = 20,
+            Items       = { prodRadioPair, devRadioPair },
+        }), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+#endif
+
+        // Load button + config status
+        var loadBtn      = new Button { Text = "Load" };
+        var configStatus = TrackPanel(new Panel { BackgroundColor = BgMain }, () => BgMain);
+        loadBtn.BackgroundColor = ColReceive;
+        loadBtn.TextColor       = Colors.White;
+        loadBtn.Font            = Av(10f, bold: true);
+        loadBtn.Height          = 36;
+
+        void RefreshConfigStatus()
+        {
+            Application.Instance.Invoke(() =>
+            {
+                if (state.IsBusy)
+                {
+                    loadBtn.Enabled = false;
+                    var bar = new ProgressBar { Indeterminate = true };
+                    var lbl = new Label { Text = state.BusyText, Font = Av(10f), TextColor = TextMid };
+                    configStatus.Content = ContentPad(new StackLayout
+                    {
+                        Spacing                    = 4,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Items                      = { bar, lbl }
+                    }, 8);
+                }
+                else
+                {
+                    loadBtn.Enabled = true;
+                    configStatus.Content = string.IsNullOrEmpty(state.LastError)
+                        ? new Panel()
+                        : ContentPad(new Label { Text = state.LastError, Font = Av(10f), TextColor = ColRed, Wrap = WrapMode.Word }, 8);
+                }
+            });
+        }
+
+        state.RefreshConfigStatus = RefreshConfigStatus;
+        RefreshConfigStatus();
+
+        loadBtn.Click += (_, _) => _ = DoLoad(card);
+
+        stack.Items.Add(new StackLayoutItem(ContentPad(loadBtn, 12), HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(Divider(),              HorizontalAlignment.Stretch));
+        stack.Items.Add(new StackLayoutItem(configStatus,           HorizontalAlignment.Stretch));
+    }
+
+    // ── Settings row helper ───────────────────────────────────────────────────
+
+    private Panel BuildSettingsRow(string label, Label valueLabel)
+    {
+        var keyLbl = TrackLabel(new Label
+        {
+            Text              = label,
+            Font              = Av(9f, bold: true),
+            TextColor         = TextLow,
+            Width             = 56,
+            VerticalAlignment = VerticalAlignment.Center,
+        }, () => TextLow);
+
+        var arrow = new Label
+        {
+            Text              = "→",
+            Font              = Av(12f),
+            TextColor         = TextLow,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        return TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 10, 12, 10),
+            Cursor          = Cursors.Pointer,
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(keyLbl,      false),
+                        new TableCell(new Panel { Width = 8 }),
+                        new TableCell(valueLabel,  true),
+                        new TableCell(arrow,       false)
+                    )
+                }
+            }
+        }, () => BgMain);
+    }
+
+    // ── Select Project screen ─────────────────────────────────────────────────
+
+    private Control BuildSelectProjectScreen(ConnectorCard card)
+    {
+        var state = GetCardState(card.Id);
+
+        var backBtn  = new Button { Text = "← Back" };
+        var closeBtn = new Button { Text = "✕" };
+        StyleGhostButton(backBtn);
+        StyleGhostButton(closeBtn);
+        backBtn.Click  += (_, _) => NavigateBack();
+        closeBtn.Click += (_, _) => GoHome();
+
+        var titleLbl    = TrackLabel(new Label { Text = "Select project", Font = Av(13f, bold: true) }, () => TextHigh);
+        var newProjBtn  = new Button { Text = "+" };
+        StylePlusButton(newProjBtn);
+
+        var searchBox = new TextBox { PlaceholderText = "Search your projects…" };
+        StyleInputBox(searchBox);
+
+        var listStack = new StackLayout { Spacing = 0, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+
+        void RenderList()
+        {
+            Application.Instance.Invoke(() =>
+            {
+                listStack.Items.Clear();
+                var filter = searchBox.Text.Trim().ToLowerInvariant();
+
+                var visible = state.Projects
+                    .Where(p => string.IsNullOrEmpty(filter) || p.Name.ToLowerInvariant().Contains(filter))
+                    .ToList();
+
+                if (state.Projects.Count == 0)
+                {
+                    listStack.Items.Add(new StackLayoutItem(ContentPad(new Label
+                    {
+                        Text = "Loading…", Font = Av(10f), TextColor = TextLow
+                    }, 16), HorizontalAlignment.Stretch));
+                    return;
+                }
+
+                if (visible.Count == 0)
+                {
+                    listStack.Items.Add(new StackLayoutItem(ContentPad(new Label
+                    {
+                        Text = "No projects match your search.", Font = Av(10f), TextColor = TextLow
+                    }, 16), HorizontalAlignment.Stretch));
+                    return;
+                }
+
+                foreach (var proj in visible)
+                {
+                    var nameLbl = TrackLabel(new Label { Text = proj.Name, Font = Av(11f) }, () => TextHigh);
+                    var row     = TrackPanel(new Panel
+                    {
+                        BackgroundColor = BgMain,
+                        Padding         = new Padding(16, 11, 16, 11),
+                        Cursor          = Cursors.Pointer,
+                        Content         = nameLbl,
+                    }, () => BgMain);
+
+                    var captured = proj;
+                    row.MouseDown += (_, _) =>
+                    {
+                        card.ProjectId   = captured.Id;
+                        card.ProjectName = captured.Name;
+                        card.ModelId     = "";
+                        card.ModelName   = "";
+                        state.Models.Clear();
+                        _cardStore.UpdateQuiet(card);
+                        if (_graphql != null)
+                            _ = LoadModelsAsync(state, card);
+                        NavigateBack();
+                    };
+
+                    listStack.Items.Add(new StackLayoutItem(row,      HorizontalAlignment.Stretch));
+                    listStack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+                }
+            });
+        }
+
+        searchBox.TextChanged += (_, _) => RenderList();
+
+        // New project inline form
+        var newProjBox    = new TextBox { PlaceholderText = "New project name…" };
+        var newProjCreate = new Button  { Text = "CREATE" };
+        var newProjCancel = new Button  { Text = "✕" };
+        StyleInputBox(newProjBox);
+        StyleCreateButton(newProjCreate);
+        StyleCancelButton(newProjCancel);
+
+        var newProjRow = TrackPanel(new Panel
+        {
+            Visible         = false,
+            BackgroundColor = BgCard,
+            Padding         = new Padding(16, 8),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(newProjBox,    true),
+                        new TableCell(new Panel { Width = 6 }),
+                        new TableCell(newProjCreate, false),
+                        new TableCell(new Panel { Width = 4 }),
+                        new TableCell(newProjCancel, false)
+                    )
+                }
+            }
+        }, () => BgCard);
+
+        newProjBtn.Click    += (_, _) => { newProjRow.Visible = !newProjRow.Visible; if (newProjRow.Visible) newProjBox.Focus(); };
+        newProjCancel.Click += (_, _) => { newProjRow.Visible = false; newProjBox.Text = ""; };
+
+        newProjCreate.Click += async (_, _) =>
+        {
+            if (_graphql == null) return;
+            var name = newProjBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            Application.Instance.Invoke(() => newProjCreate.Enabled = false);
+            try
+            {
+                var proj = await _graphql.CreateProjectAsync(name);
+                state.Projects.Insert(0, proj);
+                card.ProjectId   = proj.Id;
+                card.ProjectName = proj.Name;
+                card.ModelId     = "";
+                card.ModelName   = "";
+                state.Models.Clear();
+                _cardStore.UpdateQuiet(card);
+                Application.Instance.Invoke(() =>
+                {
+                    newProjRow.Visible = false;
+                    newProjBox.Text    = "";
+                    NavigateBack();
+                });
+            }
+            catch { }
+            finally { Application.Instance.Invoke(() => newProjCreate.Enabled = true); }
+        };
+
+        // Load projects if empty
+        if (state.Projects.Count == 0 && _graphql != null)
+            _ = LoadProjectsAsync(state, onComplete: RenderList);
+        else
+            RenderList();
+
+        var outer = new StackLayout
+        {
+            Spacing                    = 0,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+
+        outer.Items.Add(new StackLayoutItem(TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(8, 8, 12, 4),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(backBtn,    false),
+                        new TableCell(new Panel(), true),
+                        new TableCell(closeBtn,   false)
+                    )
+                }
+            }
+        }, () => BgMain), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 12, 12, 8),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(titleLbl,   true),
+                        new TableCell(newProjBtn, false)
+                    )
+                }
+            }
+        }, () => BgMain), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(ContentPad(searchBox, 6), HorizontalAlignment.Stretch));
+        outer.Items.Add(new StackLayoutItem(Divider(),               HorizontalAlignment.Stretch));
+        outer.Items.Add(new StackLayoutItem(newProjRow,              HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(new Scrollable
+        {
+            ExpandContentWidth  = true,
+            ExpandContentHeight = false,
+            BackgroundColor     = BgMain,
+            Content             = listStack,
+        }, HorizontalAlignment.Stretch));
+
+        return TrackPanel(new Panel { BackgroundColor = BgMain, Content = outer }, () => BgMain);
+    }
+
+    // ── Select Model screen ───────────────────────────────────────────────────
+
+    private Control BuildSelectModelScreen(ConnectorCard card)
+    {
+        var state = GetCardState(card.Id);
+
+        var backBtn  = new Button { Text = "← Back" };
+        var closeBtn = new Button { Text = "✕" };
+        StyleGhostButton(backBtn);
+        StyleGhostButton(closeBtn);
+        backBtn.Click  += (_, _) => NavigateBack();
+        closeBtn.Click += (_, _) => GoHome();
+
+        var titleLbl   = TrackLabel(new Label { Text = "Select model", Font = Av(13f, bold: true) }, () => TextHigh);
+        var newMdlBtn  = new Button { Text = "+" };
+        StylePlusButton(newMdlBtn);
+
+        var searchBox = new TextBox
+        {
+            PlaceholderText = string.IsNullOrEmpty(card.ProjectName)
+                ? "Search models…"
+                : $"Search in {card.ProjectName}…"
+        };
+        StyleInputBox(searchBox);
+
+        var listStack = new StackLayout { Spacing = 0, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+
+        void RenderList()
+        {
+            Application.Instance.Invoke(() =>
+            {
+                listStack.Items.Clear();
+                var filter = searchBox.Text.Trim().ToLowerInvariant();
+
+                var visible = state.Models
+                    .Where(m => string.IsNullOrEmpty(filter) || m.Name.ToLowerInvariant().Contains(filter))
+                    .ToList();
+
+                if (!string.IsNullOrEmpty(card.ProjectId) && state.Models.Count == 0)
+                {
+                    listStack.Items.Add(new StackLayoutItem(ContentPad(new Label
+                    {
+                        Text = "Loading…", Font = Av(10f), TextColor = TextLow
+                    }, 16), HorizontalAlignment.Stretch));
+                    return;
+                }
+
+                if (visible.Count == 0 && state.Models.Count > 0)
+                {
+                    listStack.Items.Add(new StackLayoutItem(ContentPad(new Label
+                    {
+                        Text = "No models match your search.", Font = Av(10f), TextColor = TextLow
+                    }, 16), HorizontalAlignment.Stretch));
+                    return;
+                }
+
+                foreach (var mdl in visible)
+                {
+                    var nameLbl = TrackLabel(new Label { Text = mdl.Name, Font = Av(11f) }, () => TextHigh);
+                    var row     = TrackPanel(new Panel
+                    {
+                        BackgroundColor = BgMain,
+                        Padding         = new Padding(16, 11, 16, 11),
+                        Cursor          = Cursors.Pointer,
+                        Content         = nameLbl,
+                    }, () => BgMain);
+
+                    var captured = mdl;
+                    row.MouseDown += (_, _) =>
+                    {
+                        card.ModelId   = captured.Id;
+                        card.ModelName = captured.Name;
+                        _cardStore.UpdateQuiet(card);
+                        NavigateBack();
+                    };
+
+                    listStack.Items.Add(new StackLayoutItem(row,      HorizontalAlignment.Stretch));
+                    listStack.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+                }
+            });
+        }
+
+        searchBox.TextChanged += (_, _) => RenderList();
+
+        // New model inline form
+        var newMdlBox    = new TextBox { PlaceholderText = "New model name…" };
+        var newMdlCancel = new Button  { Text = "✕" };
+        var newMdlHint   = TrackLabel(new Label { Text = "Model will be created on publish.", Font = Av(9.5f) }, () => TextLow);
+        StyleInputBox(newMdlBox);
+        StyleCancelButton(newMdlCancel);
+
+        var newMdlRow = TrackPanel(new Panel
+        {
+            Visible         = false,
+            BackgroundColor = BgCard,
+            Padding         = new Padding(16, 8),
+            Content         = new StackLayout
+            {
+                Spacing                    = 5,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Items =
+                {
+                    new TableLayout
+                    {
+                        Rows =
+                        {
+                            new TableRow(
+                                new TableCell(newMdlBox,    true),
+                                new TableCell(new Panel { Width = 6 }),
+                                new TableCell(newMdlCancel, false)
+                            )
+                        }
+                    },
+                    newMdlHint,
+                }
+            }
+        }, () => BgCard);
+
+        newMdlBtn.Click    += (_, _) => { newMdlRow.Visible = !newMdlRow.Visible; if (newMdlRow.Visible) newMdlBox.Focus(); };
+        newMdlCancel.Click += (_, _) => { newMdlRow.Visible = false; newMdlBox.Text = ""; };
+
+        newMdlBox.KeyDown += (_, e) =>
+        {
+            if (e.Key != Keys.Enter) return;
+            var name = newMdlBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            card.ModelId   = "";
+            card.ModelName = name;
+            _cardStore.UpdateQuiet(card);
+            newMdlRow.Visible = false;
+            newMdlBox.Text    = "";
+            NavigateBack();
+        };
+
+        // Load models if empty and project is set
+        if (state.Models.Count == 0 && !string.IsNullOrEmpty(card.ProjectId) && _graphql != null)
+            _ = LoadModelsAsync(state, card, onComplete: RenderList);
+        else
+            RenderList();
+
+        var outer = new StackLayout
+        {
+            Spacing                    = 0,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+
+        outer.Items.Add(new StackLayoutItem(TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(8, 8, 12, 4),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(backBtn,    false),
+                        new TableCell(new Panel(), true),
+                        new TableCell(closeBtn,   false)
+                    )
+                }
+            }
+        }, () => BgMain), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(Divider(), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(TrackPanel(new Panel
+        {
+            BackgroundColor = BgMain,
+            Padding         = new Padding(16, 12, 12, 8),
+            Content         = new TableLayout
+            {
+                Rows =
+                {
+                    new TableRow(
+                        new TableCell(titleLbl,  true),
+                        new TableCell(newMdlBtn, false)
+                    )
+                }
+            }
+        }, () => BgMain), HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(ContentPad(searchBox, 6), HorizontalAlignment.Stretch));
+        outer.Items.Add(new StackLayoutItem(Divider(),               HorizontalAlignment.Stretch));
+        outer.Items.Add(new StackLayoutItem(newMdlRow,               HorizontalAlignment.Stretch));
+
+        outer.Items.Add(new StackLayoutItem(new Scrollable
+        {
+            ExpandContentWidth  = true,
+            ExpandContentHeight = false,
+            BackgroundColor     = BgMain,
+            Content             = listStack,
+        }, HorizontalAlignment.Stretch));
+
+        return TrackPanel(new Panel { BackgroundColor = BgMain, Content = outer }, () => BgMain);
+    }
+
+    // ── Data loading helpers ──────────────────────────────────────────────────
+
+    private async Task LoadProjectsAsync(CardState state, Action? onComplete = null)
+    {
+        if (_graphql == null) return;
+        try
+        {
+            var projs = await _graphql.ListProjectsAsync();
+            state.Projects = projs;
+            onComplete?.Invoke();
+        }
+        catch { }
+    }
+
+    private async Task LoadModelsAsync(CardState state, ConnectorCard card, Action? onComplete = null)
+    {
+        if (_graphql == null || string.IsNullOrEmpty(card.ProjectId)) return;
+        try
+        {
+            var mdls = await _graphql.ListModelsAsync(card.ProjectId);
+            state.Models = mdls;
+            onComplete?.Invoke();
+        }
+        catch { }
+    }
+
+    // ── Publish flow ──────────────────────────────────────────────────────────
+
+    private async Task DoPublish(ConnectorCard card)
+    {
+        var state = GetCardState(card.Id);
+
+        if (string.IsNullOrEmpty(_token))
+        { SetCardError(card, "Not logged in."); return; }
+
+        if (string.IsNullOrEmpty(card.ProjectId))
+        { SetCardError(card, "Select a project first."); return; }
+
+        if (string.IsNullOrEmpty(card.ModelName))
+        { SetCardError(card, "Select or enter a model name."); return; }
+
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null) { SetCardError(card, "No active Rhino document."); return; }
+
+        bool selectionOnly = card.LayerMode == "selection";
+        IEnumerable<string>? includedLayers = null;
+        if (card.LayerMode == "select")
+            includedLayers = state.Layers.Where(l => l.IsSelected).Select(l => l.FullPath).ToList();
+
+        SetCardBusy(card, "Exporting document…");
+
+        string? tempFile = null;
+        try
+        {
+            tempFile = await Task.Run(() => RhinoExport.ExportCurrentDocTo3dm(doc, selectionOnly));
+
+            SetCardBusy(card, "Uploading…");
+            var client = new ConvertApiClient(TokenStore.ConvertServerUrl, _token);
+            var jobId  = await client.SubmitAsync(tempFile, card.ProjectId, card.ModelName,
+                state.PendingMessage, includedLayers, card.Target);
+
+            var progress = new Progress<string>(msg => SetCardBusy(card, msg));
+            var job = await client.WaitForCompletionAsync(jobId, progress);
+
+            if (job.Succeeded && !string.IsNullOrEmpty(job.SpeckleUrl))
+            {
+                state.LastResultUrl = job.SpeckleUrl;
+                state.LastError     = null;
+                card.LastVersionId  = job.SpeckleUrl;
+                card.LastSentAt     = DateTime.UtcNow;
+                _cardStore.UpdateQuiet(card);
+                _modifiedSincePublish.Remove(card.Id);
+
+                // Try to get model ID if it was a new model
+                if (_graphql != null && string.IsNullOrEmpty(card.ModelId))
+                {
+                    try
+                    {
+                        var mdls = await _graphql.ListModelsAsync(card.ProjectId);
+                        state.Models = mdls;
+                        var idx = mdls.FindIndex(m =>
+                            string.Equals(m.Name, card.ModelName, StringComparison.OrdinalIgnoreCase));
+                        if (idx >= 0)
+                        {
+                            card.ModelId   = mdls[idx].Id;
+                            card.ModelName = mdls[idx].Name;
+                            _cardStore.UpdateQuiet(card);
+                        }
+                    }
+                    catch { }
+                }
+
+                ClearCardBusy(card);
+            }
+            else
+            {
+                SetCardError(card, $"Conversion failed: {job.Error ?? "unknown error"}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            SetCardError(card, "Publish was cancelled.");
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+            when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            SetCardError(card, "Session expired — please log out and log back in.");
+        }
+        catch (Exception ex)
+        {
+            SetCardError(card, ex.Message);
+        }
+        finally
+        {
+            ClearCardBusy(card);
+            if (tempFile != null) try { File.Delete(tempFile); } catch { }
+        }
+    }
+
+    // ── Load flow ─────────────────────────────────────────────────────────────
+
+    private async Task DoLoad(ConnectorCard card)
+    {
+        if (string.IsNullOrEmpty(_token))
+        { SetCardError(card, "Not logged in."); return; }
+
+        if (string.IsNullOrEmpty(card.ProjectId))
+        { SetCardError(card, "Select a project first."); return; }
+
+        if (string.IsNullOrEmpty(card.ModelId))
+        { SetCardError(card, "Select a model first."); return; }
+
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null) { SetCardError(card, "No active Rhino document."); return; }
+
+        // card.PinnedVersionId is kept in sync by the config screen radio/combo;
+        // null means "latest version".
+        string? versionId = string.IsNullOrEmpty(card.PinnedVersionId) ? null : card.PinnedVersionId;
+
+        SetCardBusy(card, "Receiving from Speckle…");
+
+        string? tempFile = null;
+        try
+        {
+            var client = new ConvertApiClient(TokenStore.ConvertServerUrl, _token);
+            tempFile   = await client.ReceiveAsync(card.ProjectId, card.ModelId, versionId, card.Target);
+
+            SetCardBusy(card, "Importing geometry…");
+            var count = await Task.Run(() => RhinoImport.ImportFile3dm(tempFile, doc));
+
+            card.LastReceivedAt        = DateTime.UtcNow;
+            card.LastReceivedVersionId = versionId ?? "latest";
+            GetCardState(card.Id).LastError = null;
+            _cardStore.UpdateQuiet(card);
+
+            ClearCardBusy(card);
+        }
+        catch (OperationCanceledException) { SetCardError(card, "Load was cancelled."); }
+        catch (Exception ex)               { SetCardError(card, ex.Message); }
+        finally
+        {
+            ClearCardBusy(card);
+            if (tempFile != null) try { File.Delete(tempFile); } catch { }
+        }
+    }
+
+    // ── Card operation state helpers ──────────────────────────────────────────
+
+    private void SetCardBusy(ConnectorCard card, string message)
+    {
+        var state = GetCardState(card.Id);
+        state.IsBusy   = true;
+        state.BusyText = message;
+        Application.Instance.Invoke(() =>
+        {
+            state.RefreshStatusBar?.Invoke();
+            state.RefreshConfigStatus?.Invoke();
+        });
+    }
+
+    private void ClearCardBusy(ConnectorCard card)
+    {
+        var state = GetCardState(card.Id);
+        if (!state.IsBusy) return;
+        state.IsBusy   = false;
+        state.BusyText = "";
+        Application.Instance.Invoke(() =>
+        {
+            state.RefreshStatusBar?.Invoke();
+            state.RefreshConfigStatus?.Invoke();
+        });
+    }
+
+    private void SetCardError(ConnectorCard card, string error)
+    {
+        var state = GetCardState(card.Id);
+        state.IsBusy    = false;
+        state.BusyText  = "";
+        state.LastError = error;
+        Application.Instance.Invoke(() =>
+        {
+            state.RefreshStatusBar?.Invoke();
+            state.RefreshConfigStatus?.Invoke();
+        });
+    }
+
+    // ── Display helpers ───────────────────────────────────────────────────────
+
+    private static string GetCardTitle(ConnectorCard card)
+    {
+        if (!string.IsNullOrEmpty(card.ModelName)) return card.ModelName;
+        return card.Type == CardType.Send ? "New publish" : "New load";
+    }
+
+    private string GetObjectSummary(ConnectorCard card)
+    {
+        if (card.Type == CardType.Receive)
+        {
+            if (string.IsNullOrEmpty(card.ProjectName)) return "(no project selected)";
+            return string.IsNullOrEmpty(card.ModelName)
+                ? card.ProjectName
+                : $"{card.ProjectName} › {card.ModelName}";
+        }
+
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null) return "";
+
+        switch (card.LayerMode)
+        {
+            case "selection":
+            {
+                var objs = doc.Objects.GetSelectedObjects(false, false).ToList();
+                if (objs.Count == 0) return "Selection · no objects selected";
+                var groups = GetTypeGroups(objs);
+                var layers = objs
+                    .Select(o => o.Attributes.LayerIndex >= 0 && o.Attributes.LayerIndex < doc.Layers.Count
+                        ? doc.Layers[o.Attributes.LayerIndex]?.FullPath ?? ""
+                        : "")
+                    .Distinct().Count(p => !string.IsNullOrEmpty(p));
+                return $"Selection: {string.Join(" · ", groups)} from {layers} {(layers == 1 ? "layer" : "layers")}";
+            }
+            case "select":
+            {
+                if (card.IncludedLayers.Count == 0) return "Layers: none selected";
+                var names  = card.IncludedLayers.Select(p => p.Split("::").Last()).Take(3).ToList();
+                var suffix = card.IncludedLayers.Count > 3 ? $" +{card.IncludedLayers.Count - 3}" : "";
+                return $"Layers: {string.Join(", ", names)}{suffix}";
+            }
+            default:
+            {
+                var count = doc.Objects.Count(o => !o.IsHidden && o.IsValid);
+                return $"All layers · {count} {(count == 1 ? "object" : "objects")}";
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetTypeGroups(
+        IEnumerable<Rhino.DocObjects.RhinoObject> objects)
+    {
+        return objects
+            .GroupBy(o => o.ObjectType switch
+            {
+                Rhino.DocObjects.ObjectType.Mesh      => "Mesh",
+                Rhino.DocObjects.ObjectType.Brep      => "Brep",
+                Rhino.DocObjects.ObjectType.Extrusion => "Brep",
+                Rhino.DocObjects.ObjectType.Curve     => "Curve",
+                Rhino.DocObjects.ObjectType.Point     => "Point",
+                _                                     => "Other"
+            })
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Count()} {g.Key}");
+    }
+
+    // ── Session restore ───────────────────────────────────���───────────────────
+
+    private void TryRestoreSession()
+    {
+        var url   = TokenStore.ServerUrl;
+        var token = TokenStore.LoadToken(url);
+        if (!string.IsNullOrEmpty(token))
+            Task.Run(() => InitialiseLoggedInAsync(url, token));
+    }
+
+    private async Task InitialiseLoggedInAsync(string serverUrl, string token)
+    {
+        var name = await SpeckleAuth.GetUserNameAsync(serverUrl, token);
+        if (name == null)
+        {
+            TokenStore.ClearToken(serverUrl);
+            return;
+        }
+
+        _serverUrl = serverUrl;
+        _token     = token;
+        _graphql   = new SpeckleGraphQL(serverUrl, token);
+
+        Application.Instance.Invoke(() =>
+        {
+            _accountNameLabel.Text   = name;
+            _serverDisplayLabel.Text = serverUrl;
+            _loginSection.Visible    = false;
+            _mainSection.Visible     = true;
+        });
+
+        SwapContent();
+    }
+
+    // ── Auth event handlers ───────────────────────────────────────────────────
+
+    private async void OnLoginClick(object? sender, EventArgs e)
+    {
+        ClearLoginError();
+        var serverUrl = _serverUrlBox.Text.Trim().TrimEnd('/');
+        if (string.IsNullOrEmpty(serverUrl)) return;
+
+        _loginSection.Visible   = false;
+        _browserSection.Visible = true;
+
+        _loginCts?.Cancel();
+        _loginCts = new CancellationTokenSource();
+
+        try
+        {
+            var token = await SpeckleAuth.LoginWithOAuthAsync(
+                serverUrl,
+                openAuthUrl:       url => Application.Instance.Invoke(() => _webView.Url = new Uri(url)),
+                timeoutSeconds:    300,
+                cancellationToken: _loginCts.Token);
+
+            if (string.IsNullOrEmpty(token))
+            {
+                SetLoginError("Login was cancelled or timed out.");
+                ShowLoginForm();
+                return;
+            }
+
+            _browserSection.Visible = false;
+            TokenStore.SaveToken(serverUrl, token);
+            await InitialiseLoggedInAsync(serverUrl, token);
+        }
+        catch (OperationCanceledException) { ShowLoginForm(); }
+        catch (Exception ex) { SetLoginError(ex.Message); ShowLoginForm(); }
+    }
+
+    private void OnCancelLoginClick(object? sender, EventArgs e)
+    {
+        _loginCts?.Cancel();
+        _webView.Url = new Uri("about:blank");
+        ShowLoginForm();
+    }
+
+    private void ShowLoginForm() => Application.Instance.Invoke(() =>
+    {
+        _browserSection.Visible = false;
+        _loginSection.Visible   = true;
+    });
+
+    private async void OnPatClick(object? sender, EventArgs e)
+    {
+        var serverUrl = _serverUrlBox.Text.Trim().TrimEnd('/');
+        var pat       = _patBox.Text.Trim();
+        if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(pat)) return;
+
+        ClearLoginError();
+        SetLoginBusy(true, "Validating token…");
+        try
+        {
+            var name = await SpeckleAuth.GetUserNameAsync(serverUrl, pat);
+            if (name == null) { SetLoginError("Token is invalid or the server rejected it."); return; }
+            TokenStore.SaveToken(serverUrl, pat);
+            await InitialiseLoggedInAsync(serverUrl, pat);
+        }
+        catch (Exception ex) { SetLoginError(ex.Message); }
+        finally { SetLoginBusy(false); }
+    }
+
+    private void OnLogoutClick(object? sender, EventArgs e)
+    {
+        TokenStore.ClearToken(_serverUrl);
+        _token   = string.Empty;
+        _graphql = null;
+
+        foreach (var s in _cardStates.Values)
+        {
+            s.Projects.Clear();
+            s.Models.Clear();
+            s.Versions.Clear();
+        }
+
+        Application.Instance.Invoke(() =>
+        {
+            _mainSection.Visible  = false;
+            _loginSection.Visible = true;
+            ClearLoginError();
+            HideLoginProgress();
+        });
+    }
+
+    // ── Login status helpers ──────────────────────────────────────────────────
+
+    private void ShowLoginProgress(string msg) => Application.Instance.Invoke(() =>
+    {
+        _progressLabel.Text    = msg;
+        _progressBar.Visible   = true;
+        _progressLabel.Visible = true;
+    });
+
+    private void HideLoginProgress() => Application.Instance.Invoke(() =>
+    {
+        _progressBar.Visible   = false;
+        _progressLabel.Visible = false;
+    });
+
+    private void SetLoginError(string msg) => Application.Instance.Invoke(() =>
+    {
+        _errorLabel.Text    = msg;
+        _errorLabel.Visible = true;
+        HideLoginProgress();
+    });
+
+    private void ClearLoginError() => Application.Instance.Invoke(() =>
+        _errorLabel.Visible = false);
+
+    private void SetLoginBusy(bool busy, string? msg = null)
+    {
+        if (busy) ShowLoginProgress(msg ?? "Please wait…");
+        else      HideLoginProgress();
+    }
+
+    // ── Rhino selection subscription ──────────────────────────────────────────
+
+    private void ManageRhinoSelectionSubscription()
+    {
+        bool anyInSelectionMode = _cardStore.Cards
+            .Any(c => c.Type == CardType.Send && c.LayerMode == "selection");
+
+        if (anyInSelectionMode && !_rhinoSelectionSubscribed)
+        {
+            RhinoDoc.SelectObjects      += OnRhinoSelectionChanged;
+            RhinoDoc.DeselectObjects    += OnRhinoSelectionChanged;
+            RhinoDoc.DeselectAllObjects += OnRhinoDeselectAll;
+            _rhinoSelectionSubscribed = true;
+        }
+        else if (!anyInSelectionMode && _rhinoSelectionSubscribed)
+        {
+            UnsubscribeRhinoSelectionEvents();
+        }
+    }
+
+    private void OnRhinoSelectionChanged(object? sender, Rhino.DocObjects.RhinoObjectSelectionEventArgs e)
+    {
+        foreach (var s in _cardStates.Values)
+            s.OnSelectionChanged?.Invoke();
+    }
+
+    private void OnRhinoDeselectAll(object? sender, Rhino.DocObjects.RhinoDeselectAllObjectsEventArgs e)
+    {
+        foreach (var s in _cardStates.Values)
+            s.OnSelectionChanged?.Invoke();
+    }
+
+    private void UnsubscribeRhinoSelectionEvents()
+    {
+        if (_rhinoSelectionSubscribed)
+        {
+            RhinoDoc.SelectObjects      -= OnRhinoSelectionChanged;
+            RhinoDoc.DeselectObjects    -= OnRhinoSelectionChanged;
+            RhinoDoc.DeselectAllObjects -= OnRhinoDeselectAll;
+            _rhinoSelectionSubscribed   = false;
+        }
+    }
+
+    // ── Rhino document modification subscription (out-of-sync detection) ──────
+    //
+    // Subscribes to AddRhinoObject / DeleteRhinoObject so that geometry changes
+    // mark published send cards as "out of sync with application".
+
+    private void ManageRhinoModifiedSubscription()
+    {
+        bool anyPublished = _cardStore.Cards
+            .Any(c => c.Type == CardType.Send && c.LastSentAt != null);
+
+        if (anyPublished && !_rhinoModifiedSubscribed)
+        {
+            RhinoDoc.AddRhinoObject    += OnRhinoObjectAdded;
+            RhinoDoc.DeleteRhinoObject += OnRhinoObjectDeleted;
+            _rhinoModifiedSubscribed = true;
+        }
+        else if (!anyPublished && _rhinoModifiedSubscribed)
+        {
+            UnsubscribeRhinoModifiedEvents();
+        }
+    }
+
+    private void OnRhinoObjectAdded(object? sender, Rhino.DocObjects.RhinoObjectEventArgs e)
+        => MarkCardsOutOfSync();
+
+    private void OnRhinoObjectDeleted(object? sender, Rhino.DocObjects.RhinoObjectEventArgs e)
+        => MarkCardsOutOfSync();
+
+    private void MarkCardsOutOfSync()
+    {
+        bool anyChanged = false;
+        foreach (var card in _cardStore.Cards.Where(c => c.Type == CardType.Send && c.LastSentAt != null))
+        {
+            if (_modifiedSincePublish.Add(card.Id))
+                anyChanged = true;
+        }
+
+        if (anyChanged)
+        {
+            foreach (var card in _cardStore.Cards.Where(c => _modifiedSincePublish.Contains(c.Id)))
+            {
+                var state = GetCardState(card.Id);
+                Application.Instance.Invoke(() => state.RefreshStatusBar?.Invoke());
+            }
+        }
+    }
+
+    private void UnsubscribeRhinoModifiedEvents()
+    {
+        if (_rhinoModifiedSubscribed)
+        {
+            RhinoDoc.AddRhinoObject    -= OnRhinoObjectAdded;
+            RhinoDoc.DeleteRhinoObject -= OnRhinoObjectDeleted;
+            _rhinoModifiedSubscribed = false;
+        }
+    }
+
+    protected override void OnUnLoad(EventArgs e)
+    {
+        UnsubscribeRhinoSelectionEvents();
+        UnsubscribeRhinoModifiedEvents();
+        _cardStore.Dispose();
+        base.OnUnLoad(e);
+    }
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/Models/CardStore.cs ---
+using System.Text.Json;
+using Rhino;
+
+namespace RebusConnector.Models;
+
+/// <summary>
+/// Persists connector cards as JSON in the active Rhino document's string table
+/// (key "rebus_connector" / "cards") so they travel with the .3dm file.
+/// Fires <see cref="CardsChanged"/> on load or any mutation.
+/// </summary>
+public class CardStore : IDisposable
+{
+    private const string Section = "rebus_connector";
+    private const string Entry   = "cards";
+
+    private static readonly JsonSerializerOptions _json = new()
+    {
+        WriteIndented        = false,
+        PropertyNamingPolicy = null,
+    };
+
+    private List<ConnectorCard> _cards = [];
+
+    /// <summary>Raised on the calling thread whenever the card list changes.</summary>
+    public event Action? CardsChanged;
+
+    public CardStore()
+    {
+        RhinoDoc.ActiveDocumentChanged += OnDocumentChanged;
+        Load();
+    }
+
+    public void Dispose() =>
+        RhinoDoc.ActiveDocumentChanged -= OnDocumentChanged;
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    public IReadOnlyList<ConnectorCard> Cards => _cards;
+
+    public void Add(ConnectorCard card)
+    {
+        _cards.Add(card);
+        Save();
+        CardsChanged?.Invoke();
+    }
+
+    public void Remove(string cardId)
+    {
+        _cards.RemoveAll(c => c.Id == cardId);
+        Save();
+        CardsChanged?.Invoke();
+    }
+
+    public void Update(ConnectorCard card)
+    {
+        var idx = _cards.FindIndex(c => c.Id == card.Id);
+        if (idx >= 0) _cards[idx] = card;
+        else          _cards.Add(card);
+        Save();
+        CardsChanged?.Invoke();
+    }
+
+    /// <summary>Persists card state without raising <see cref="CardsChanged"/>.</summary>
+    public void UpdateQuiet(ConnectorCard card)
+    {
+        var idx = _cards.FindIndex(c => c.Id == card.Id);
+        if (idx >= 0) _cards[idx] = card;
+        else          _cards.Add(card);
+        Save();
+    }
+
+    /// <summary>
+    /// Returns the union of IncludedLayers from all OTHER send cards targeting
+    /// the same model — used to show green indicators in the layer checklist.
+    /// </summary>
+    public HashSet<string> GetSiblingLayers(string cardId, string modelId) =>
+        _cards
+            .Where(c => c.Id != cardId
+                     && c.Type == CardType.Send
+                     && c.ModelId == modelId)
+            .SelectMany(c => c.IncludedLayers)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    // ── Persistence ───────────────────────────────────────────────────────────
+
+    private void OnDocumentChanged(object? sender, DocumentEventArgs e)
+    {
+        Load();
+        CardsChanged?.Invoke();
+    }
+
+    private void Load()
+    {
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null) { _cards = []; return; }
+
+        var json = doc.Strings.GetValue(Section, Entry);
+        if (string.IsNullOrWhiteSpace(json)) { _cards = []; return; }
+
+        try   { _cards = JsonSerializer.Deserialize<List<ConnectorCard>>(json, _json) ?? []; }
+        catch { _cards = []; }
+    }
+
+    private void Save()
+    {
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null) return;
+        doc.Strings.SetString(Section, Entry, JsonSerializer.Serialize(_cards, _json));
+    }
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/Models/ConnectorCard.cs ---
+using System.Text.Json.Serialization;
+
+namespace RebusConnector.Models;
+
+public enum CardType { Send, Receive }
+
+/// <summary>
+/// Represents a single saved send or receive configuration for a document.
+/// Persisted as JSON in RhinoDoc.Strings so it travels with the .3dm file.
+/// </summary>
+public class ConnectorCard
+{
+    public string   Id          { get; set; } = Guid.NewGuid().ToString("N");
+    public CardType Type        { get; set; }
+
+    public string ProjectId   { get; set; } = "";
+    public string ProjectName { get; set; } = "";
+    public string ModelId     { get; set; } = "";
+    public string ModelName   { get; set; } = "";
+    public string Target      { get; set; } = "prod";   // "prod" | "dev"
+
+    // ── Send-specific ─────────────────────────────────────────────────────────
+
+    /// <summary>"all" | "select" | "selection"</summary>
+    public string       LayerMode      { get; set; } = "all";
+    public List<string> IncludedLayers { get; set; } = [];
+    public string?      LastVersionId  { get; set; }
+    public DateTime?    LastSentAt     { get; set; }
+
+    // ── Receive-specific ──────────────────────────────────────────────────────
+
+    /// <summary>null = always use latest version</summary>
+    public string?   PinnedVersionId       { get; set; }
+    public DateTime? LastReceivedAt        { get; set; }
+    public string?   LastReceivedVersionId { get; set; }
+
+    // ── Display helpers ───────────────────────────────────────────────────────
+
+    [JsonIgnore]
+    public string CardTitle => Type == CardType.Send
+        ? LayerMode switch
+        {
+            "all"       => "All layers",
+            "selection" => "Selection",
+            _           => IncludedLayers.Count > 0
+                               ? string.Join(", ", IncludedLayers
+                                   .Select(p => p.Split("::").Last())
+                                   .Take(3))
+                               : "Select layers"
+        }
+        : string.IsNullOrEmpty(ModelName) ? "Receive" : ModelName;
+
+    [JsonIgnore]
+    public string LastActionText => Type == CardType.Send
+        ? (LastSentAt.HasValue     ? $"Sent {TimeAgo(LastSentAt.Value)}"     : "Never sent")
+        : (LastReceivedAt.HasValue ? $"Received {TimeAgo(LastReceivedAt.Value)}" : "Never received");
+
+    private static string TimeAgo(DateTime dt)
+    {
+        var span = DateTime.UtcNow - dt.ToUniversalTime();
+        if (span.TotalSeconds < 60)  return "just now";
+        if (span.TotalMinutes < 60)  return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours   < 24)  return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/Models/ConversionJob.cs ---
+namespace RebusConnector.Models;
+
+public record ConversionJob(
+    string JobId,
+    string Status,
+    string? SpeckleUrl,
+    string? Error = null
+)
+{
+    public bool IsComplete => Status is "complete" or "failed";
+    public bool Succeeded => Status == "complete";
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/Models/LayerItem.cs ---
+using System.ComponentModel;
+
+namespace RebusConnector.Models;
+
+/// <summary>Represents a single Rhino layer as a checkable list item.</summary>
+public class LayerItem : INotifyPropertyChanged
+{
+    private bool _isSelected = true;
+
+    public string FullPath { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public int Depth { get; init; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+--- REBUS-Connector-Rhino/RebusConnector/GlobalUsings.cs ---
+global using System;
+global using System.Collections.Generic;
+global using System.IO;
+global using System.Linq;
+global using System.Net.Http;
+global using System.Net.Http.Headers;
+global using System.Text;
+global using System.Text.Json;
+global using System.Threading;
+global using System.Threading.Tasks;
+
+--- REBUS-Connector-Rhino/README.md ---
+# REBUS Portal Connector for Rhino
+
+A native Rhino 8 plugin that connects Rhino directly to the REBUS Speckle deployment, using the REBUS 3DConvert conversion pipeline for high-fidelity geometry upload and download.
+
+---
+
+## Overview
+
+The REBUS Portal Connector replicates the Speckle connector workflow but routes all geometry through the REBUS 3DConvert service, which preserves:
+
+- Full PBR materials (diffuse, emissive, metallic, roughness, opacity)
+- Texture maps uploaded as Speckle blobs
+- Per-mesh texture coordinates
+- Layer colours and layer hierarchy
+- Named views (3DM files only)
+
+Authentication is handled by your existing REBUS Speckle account — no separate API key is required.
+
+---
+
+## Features
+
+### Card-based workflow
+
+The panel uses a persistent **card** system. Each card represents a saved send or receive configuration and is stored in the Rhino document (travels with the `.3dm` file).
+
+- **Send cards** — define what to push and where (project, model, layer selection)
+- **Receive cards** — define what to pull from Speckle and import into Rhino
+- Multiple cards per document — push different layer groups to the same model independently
+- Cards persist across Rhino sessions
+
+### Layer selection modes
+
+Each send card supports three modes:
+
+| Mode | Behaviour |
+|---|---|
+| All layers | Exports the entire document |
+| Select layers | Exports only the checked layers (layer checklist shown) |
+| Selection | Exports only the objects currently selected in the viewport |
+
+### Layer status indicators
+
+In **Select layers** mode, layers that are already included in another send card targeting the same model are highlighted with a green dot `●`. This lets you see at a glance which layers are already being managed by other cards, preventing accidental duplication.
+
+### Receive / download
+
+Receive cards pull a Speckle version back into Rhino:
+
+- Geometry is placed on the original layer hierarchy (layers are created if they don't exist)
+- Existing geometry is not removed — new objects are added alongside it
+- Choose **Latest version** or pin a **Specific version**
+
+### Collaborative workflow
+
+Multiple people can work on the same Speckle project and model simultaneously:
+
+```
+Model A
+├── Card: Layers 1–3   → pushed by User A
+├── Card: Layers 4–5   → pushed by User B
+└── Card: Selection    → pushed by User A (detail work)
+```
+
+When layer 2 changes, only the card covering layers 1–3 needs to be re-pushed.
+
+### Themes
+
+Light and dark mode with a toggle button. Theme preference is persisted per-installation.
+
+### Build variants
+
+| Variant | Target servers available | Installer name |
+|---|---|---|
+| Release (public) | Production only | `Rebus-Portal-Connector_vX.X.X_Release.exe` |
+| Debug (internal) | Production + Development | `Rebus-Portal-Connector_vX.X.X_Debug.exe` |
+
+---
+
+## Requirements
+
+- Rhino 8 (Windows)
+- Access to the REBUS Speckle server (`speckle.rebus.industries`)
+- A REBUS Speckle account
+
+---
+
+## Installation
+
+### Via installer (recommended)
+
+1. Download the latest `Rebus-Portal-Connector_vX.X.X_Release.exe` from [Releases](../../releases)
+2. Close Rhino if it is open
+3. Run the installer (no administrator rights required)
+4. Open Rhino — the **REBUS Connector** panel is available under Panels menu
+
+### Manual (from build output)
+
+1. Build the project (see [Building from source](#building-from-source))
+2. In Rhino, go to **Tools → Options → Plug-ins → Install**
+3. Select `RebusConnector.rhp` from `bin\x64\Release\net7.0-windows\`
+
+---
+
+## Usage
+
+### First-time login
+
+1. Open the **REBUS Connector** panel (Panels menu or type `RebusConnector` in the command line)
+2. Click **LOG IN TO SPECKLE**
+3. Complete the OAuth login in the embedded browser panel
+4. The panel shows your name and server URL when logged in
+
+### Creating a send card
+
+1. Click **+ SEND** in the action bar
+2. Select or create a **Project**
+3. Select or create a **Model** (branch)
+4. Choose a layer mode: All layers / Select layers / Selection
+5. Optionally add a **version message**
+6. Click **SEND TO SPECKLE**
+
+The card is saved automatically. Next time you open the file, the card remembers its configuration.
+
+### Creating a receive card
+
+1. Click **+ RECEIVE** in the action bar
+2. Select a **Project** and **Model**
+3. Choose **Latest version** or select a specific version
+4. Click **RECEIVE FROM SPECKLE**
+
+Geometry is imported onto matching layers in the active document.
+
+### Re-sending after changes
+
+Open the file, find the relevant send card, and click **SEND**. The card already has the correct project, model, and layer configuration from the previous send.
+
+---
+
+## Architecture
+
+```
+Rhino Connector (C#, Eto.Forms)
+│
+├── Auth         SpeckleAuth.cs     OAuth 2.0 PKCE + PAT login
+│                TokenStore.cs      Settings persistence (per plugin install)
+│
+├── Models       ConnectorCard.cs   Send/receive card data model
+│                CardStore.cs       Card persistence (per .3dm document)
+│                SpeckleProject.cs  Project handle
+│                SpeckleModel.cs    Model (branch) handle
+│                SpeckleVersion.cs  Version (commit) handle
+│                LayerItem.cs       Checkable layer row
+│
+├── Services     SpeckleGraphQL.cs  Speckle v2 GraphQL: projects, models, versions
+│                ConvertApiClient.cs 3DConvert REST API: submit, poll, receive
+│
+├── Helpers      RhinoExport.cs     Export active doc / selection to temp .3dm
+│                RhinoImport.cs     Import .3dm into active doc, recreate layers
+│
+└── UI           RebusEtoPanel.cs   Card-based dockable panel (Eto.Forms)
+
+3DConvert Server (Python, FastAPI)
+│
+├── auth.py          Speckle Bearer token validation
+├── main.py          FastAPI routes (convert, receive, jobs, admin)
+├── router.py        Conversion dispatcher by file extension
+├── writer_speckle.py Speckle commit builder (meshes → Speckle objects)
+└── reader_speckle.py Speckle receiver (Speckle objects → .3dm file)
+```
+
+### Data flow — Send
+
+```
+Rhino doc
+  → RhinoExport (.3dm temp file)
+    → 3DConvert /convert/async (multipart upload)
+      → router.py → rhino_conv.py (Rhino watcher on RB-DA2-PC01)
+        → writer_speckle.py (SpecklePy commit)
+          → Speckle server
+```
+
+### Data flow — Receive
+
+```
+Speckle server
+  → 3DConvert /receive/speckle
+    → reader_speckle.py (SpecklePy download → rhino3dm .3dm)
+      → ConvertApiClient (download .3dm temp file)
+        → RhinoImport (add objects to active doc layers)
+```
+
+---
+
+## Building from source
+
+### Prerequisites
+
+- .NET 7 SDK
+- Rhino 8 installed at the default path (`C:\Program Files\Rhino 8\`)
+- (Optional) Inno Setup 6 for building installers
+
+### Build the plugin
+
+```powershell
+cd "rebus rhino connector"
+dotnet build -c Release
+```
+
+Close Rhino before building — it locks the `.rhp` file while loaded.
+
+### Build installers
+
+```powershell
+cd "rebus rhino connector"
+powershell -ExecutionPolicy Bypass -File Build-Installer.ps1 -Version "1.0.0"
+```
+
+This produces both variants in `dist\`:
+- `Rebus-Portal-Connector_v1.0.0_Debug.exe`
+- `Rebus-Portal-Connector_v1.0.0_Release.exe`
+
+### Conditional compilation
+
+The `INCLUDE_DEV_TARGET` preprocessor symbol gates the Development server radio button:
+
+| MSBuild config | Symbol defined | Use |
+|---|---|---|
+| `Release` | Yes | Internal / Debug installer |
+| `ReleaseProd` | No | Public / Release installer |
+
+---
+
+## Configuration
+
+The connector reads server URLs from Rhino plugin settings (persisted in `%AppData%\McNeel\Rhinoceros\8.0\PlugIns\...`):
+
+| Setting | Default | Description |
+|---|---|---|
+| `server_url` | `https://speckle.rebus.industries` | Speckle production server |
+| `convert_server_url` | `https://convert.rebus.industries` | 3DConvert service |
+
+These can be changed in the connector's **Settings** section.
+
+---
+
+## Speckle app registrations
+
+Two OAuth applications are registered on the REBUS Speckle servers:
+
+| Server | App ID | Redirect |
+|---|---|---|
+| Production | `c0c8e773a3` | `https://speckle.rebus.industries/authn/verify/c0c8e773a3/{challenge}` |
+| Development | `c047ac8afa` | `https://speckle-dev.rebus.industries/authn/verify/c047ac8afa/{challenge}` |
+
+These are hardcoded in `Auth/SpeckleAuth.cs`.
+
+---
+
+## Version history
+
+| Version | Date | Notes |
+|---|---|---|
+| 1.0.0 | 2026-05-15 | Initial release — card-based workflow, send, receive, layer indicators, light/dark mode |
+
+---
+
+## Related repositories
+
+| Repo | Description |
+|---|---|
+| [CheekiSkrub/3DConvert](https://github.com/CheekiSkrub/3DConvert) | 3DConvert conversion service |
+| [CheekiSkrub/speckle-server-dev](https://github.com/CheekiSkrub/speckle-server-dev) | REBUS Speckle fork |
+| [CheekiSkrub/REBUS-Speckle](https://github.com/CheekiSkrub/REBUS-Speckle) | Speckle production config |
+
+---
+
+## Licence
+
+Internal REBUS Industries tooling. Not for public distribution.
+
+--- REBUS-System/CLAUDE.md ---
+# REBUS System — Claude Session Briefing
+
+Read this file at the start of any session involving the REBUS infrastructure. It gives you full context without re-deriving everything.
+
+---
+
+## What This Folder Is
+
+`D:\Documents\Claude\REBUS System\` is the single source of truth for the REBUS datacenter cluster. Each subfolder is a deployment or infrastructure component with its own `SETUP_NOTES.md`, config files, and runbook commands.
+
+```
+REBUS System/
+├── CLAUDE.md                  ← you are here
+├── README.md                  ← deployment index + cluster overview
+├── id_ed25519_proxmox[.pub]   ← SSH key: root on all Proxmox nodes
+├── id_ed25519_rebus[.pub]     ← SSH key: rebus user on all Linux VMs
+│
+├── proxy/                     ← Caddy HA proxy pair (Proxy1 + Proxy2)
+│   ├── SETUP_NOTES.md
+│   ├── Caddyfile              ← live config (identical on both nodes)
+│   ├── keepalived-proxy1.conf
+│   └── keepalived-proxy2.conf
+│
+├── speckle/                   ← Speckle Server (production)
+│   ├── SETUP_NOTES.md
+│   ├── docker-compose.yml
+│   └── docker-compose.override.yml
+│
+├── speckle-dev/               ← Speckle Server (dev / pre-release)
+│   ├── SETUP_NOTES.md
+│   ├── docker-compose.yml
+│   ├── docker-compose.override.yml
+│   └── setup-dev-vm.sh
+│
+├── erugo/                     ← Erugo file sharing (transfer.rebus.industries)
+│   ├── SETUP_NOTES.md
+│   └── docker-compose.yml
+│
+├── rhinocompute/              ← RhinoCompute REST API (Windows VM) + DWG watcher
+│   ├── SETUP_NOTES.md
+│   └── rh_watcher.ps1         ← DWG conversion watcher (runs on RB-DA2-PC01)
+│
+└── 3DConvert/                 ← 3DConvert file conversion service
+    ├── SETUP_NOTES.md
+    ├── rh_watcher.ps1
+    ├── Dockerfile
+    ├── docker-compose.yml
+    ├── requirements.txt
+    └── app/                   ← Python FastAPI source
+```
+
+---
+
+## Quick Access — SSH
+
+```bash
+# Proxmox nodes (root)
+ssh -i id_ed25519_proxmox root@10.0.1.101   # SRV01
+ssh -i id_ed25519_proxmox root@10.0.1.102   # SRV02
+ssh -i id_ed25519_proxmox root@10.0.1.103   # SRV03
+
+# Proxy LXCs (via Proxmox host)
+ssh root@10.0.1.101 -t pct enter 251        # Proxy1
+ssh root@10.0.1.102 -t pct enter 252        # Proxy2
+
+# Application VMs (rebus user)
+ssh -i id_ed25519_rebus rebus@10.0.200.11   # Speckle production
+ssh -i id_ed25519_rebus rebus@10.0.200.112  # Speckle dev
+
+# RhinoCompute VM (Windows, SSH as Administrator)
+ssh -i id_ed25519_rebus Administrator@10.0.200.14   # RhinoCompute (VMID 204)
+
+# DWG Workstation (Windows 11 Pro, SSH as LocalUser)
+ssh -i id_ed25519_windows LocalUser@10.0.10.201     # RB-DA2-PC01 (DWG conversion)
+```
+
+SSH keys are in this folder. When running bash commands, copy the key to `/tmp/ssh-keys/` and `chmod 600` before use.
+
+The `id_ed25519_windows` key is stored at `D:\Documents\Claude\REBUS System\3DConvert\` — use it for SSH/SCP to RB-DA2-PC01.
+
+---
+
+## Deployments at a Glance
+
+| Service | Host | IP | URL | Version | Notes |
+|---|---|---|---|---|---|
+| Speckle (prod) | VMID 201, SRV03 | 10.0.200.11 | https://speckle.rebus.industries | frontend v2.3.0 / server+preview v2.1.0 | See `speckle/` |
+| Speckle (dev) | VMID 301, SRV03 | 10.0.200.112 | https://speckle-dev.rebus.industries | frontend v2.3.0 / server+preview v2.1.0 | See `speckle-dev/` |
+| Erugo | VMID 203, SRV03 | 10.0.200.13 | https://transfer.rebus.industries | :latest | See `erugo/` |
+| RhinoCompute | VMID 204, SRV03 | 10.0.200.14 | https://compute.rebus.industries | Rhino 8.30 / compute 8.x | See `rhinocompute/` |
+| 3DConvert | VMID 201, SRV03 | 10.0.200.11:8765 | https://convert.rebus.industries | hot-patched (rebuild needed) | See `3DConvert/` |
+| DWG/3DM Workstation | RB-DA2-PC01 | 10.0.10.201 | — | Windows 11 Pro, Rhino 8 | rh_watcher.ps1 |
+
+---
+
+## Network Layout
+
+```
+Internet
+    │
+    ▼ (public IP → DNS)
+VRRP VIP  10.0.200.250
+    │
+    ├── Proxy1  10.0.200.251  (LXC 251, SRV01)  ← MASTER normally
+    └── Proxy2  10.0.200.252  (LXC 252, SRV02)  ← BACKUP
+            │
+            ├── speckle.rebus.industries     → 10.0.200.11  (ports 80, 3000)
+            ├── speckle-dev.rebus.industries → 10.0.200.112 (ports 80, 3000)
+            ├── compute.rebus.industries     → 10.0.200.14  (port 80, IIS)
+            └── convert.rebus.industries     → 10.0.200.11  (port 8765)
+
+VLAN 200 subnet: 10.0.200.0/24
+DWG workstation: 10.0.10.201 (RB-DA2-PC01, separate subnet, reachable from VMs)
+```
+
+---
+
+## Proxmox Cluster
+
+| Node | IP | Hosts |
+|---|---|---|
+| RB-DA2-SRV01 | 10.0.1.101 | Proxy1 (251), DC1 (101), SYS01 (151) |
+| RB-DA2-SRV02 | 10.0.1.102 | Proxy2 (252), DC2 (102) |
+| RB-DA2-SRV03 | 10.0.1.103 | Speckle-Server (201), Erugo (203), Speckle-DEV (301), RhinoCompute (204), n8n (202, stopped) |
+
+---
+
+## Key Conventions
+
+- **IP ranges:** Production services on `10.0.200.1–99`, dev/staging on `10.0.200.100–199`, proxy/infra on `10.0.200.250–254`.
+- **Compose rule:** always `cd /opt/speckle && docker compose ...` or use `--project-directory`. Never `-f docker-compose.yml` alone — silently drops the override.
+- **Caddy changes:** always update **both** proxies (Proxy1 on SRV01, Proxy2 on SRV02) and reload both.
+- **Custom images — versioning:** Frontend is independently versioned from server/preview-service. Built on dev VM from `rebus-dev` branch, transferred to prod via `docker save | gzip`. See `speckle-dev/SETUP_NOTES.md` for rebuild instructions for each.
+  - `speckle-frontend-2-rebus:v2.3.0` — iFrame embedding, V3 named views, camera geometry fix, hardcoded version string, **Layer/Model/Level/Type labels for Collections** (full collectionType-aware sidebar: layer, model, rhino layer/model, root, level, type, legacy `:Speckle.Core.Models.Layer`). Current on prod + dev.
+  - `speckle-server-rebus:v2.1.0` — custom server build with `FF_SAVED_VIEWS_ENABLED` and related feature flags
+  - `speckle-preview-service-rebus:v2.1.0` — no-op Camera converter ensures thumbnails are clean
+- **Speckle — do not blindly enable `FF_WORKSPACES_MODULE_ENABLED` on prod:** Enabling workspaces on `speckle-server` requires the forked web app to tolerate workspace GraphQL/`workspace:read` cleanly; flipping it historically **broke login** (`speckle/VIEWER_CUSTOMISATION.md` §§5–6). Prefer the documented approach (frontend GraphQL + server authz tweaks for saved views without assuming every project lives in a workspace).
+- **3DConvert hot-patch warning:** All changes since initial build are hot-patched into the running container. A full `docker build` is needed to bake them in — do this before any planned downtime.
+
+---
+
+## Development Tools
+
+3DConvert is developed in **Cursor** (AI code editor) as well as Claude Cowork sessions. The 3DConvert repo has a `.cursorrules` file at its root with full architectural context — open the `3DConvert/` folder (or the cloned GitHub repo) as the Cursor project root.
+
+**Workflow for 3DConvert changes:**
+1. Edit source in Cursor (local clone or `D:\Documents\Claude\REBUS System\3DConvert\app\`)
+2. Hot-patch to running container: `docker stop → docker cp → clear pyc → docker start`
+3. When stable: full rebuild on prod VM (`DOCKER_BUILDKIT=0 docker build --no-cache -t 3dconvert:latest . && docker compose up -d`)
+4. Commit on prod VM, relay-push to GitHub via dev VM bundle (see `3DConvert/SETUP_NOTES.md`)
+
+**Critical for embedded IronPython (`_RHINO_SCRIPT_CONTENT` in `rhino_conv.py`):**
+- Edit only inside the container's `rhino_conv.py` — PC01's `rh_convert.py` is overwritten every job
+- All strings in the embedded script must use `'''` not `"""` (would close the outer `r"""..."""`)
+- All paths using backslash must use raw strings: `r"C:\..."` or `\\`
+- All .NET integer types (`System.Byte`, `System.Int32`) must be cast with `int()` before JSON serialization
+
+---
+
+## GitHub Repositories
+
+| Repo | URL | Branch | VM source |
+|---|---|---|---|
+| Speckle fork | https://github.com/CheekiSkrub/speckle-server-dev | `rebus-dev` | `/home/rebus/speckle-server-dev/` on dev VM |
+| Speckle prod config | https://github.com/CheekiSkrub/REBUS-Speckle | `main` | `/home/rebus/speckle-config/` on prod VM |
+| 3DConvert | https://github.com/CheekiSkrub/3DConvert | `main` | `/home/rebus/3dconvert/` on prod VM |
+| Proxy config | https://github.com/CheekiSkrub/REBUS-Proxy-config | `main` | Proxy1/Proxy2 (LXCs 251/252) |
+| Erugo deploy | https://github.com/CheekiSkrub/REBUS-Erugo-Deploy | `main` | Erugo VM (VMID 203) |
+
+**GitHub SSH key:** `~rebus/.ssh/id_ed25519_github` on Speckle-DEV VM (10.0.200.112).
+Prod VM has no GitHub key — push via bundle relay through dev VM (see `3DConvert/SETUP_NOTES.md`).
+
+---
+
+## RB-DA2-PC01 — DWG Workstation
+
+| Property | Value |
+|---|---|
+| Hostname | RB-DA2-PC01 |
+| IP | 10.0.10.201 |
+| OS | Windows 11 Pro |
+| User | LocalUser (interactive RDP session) |
+| SSH | `ssh -i id_ed25519_windows LocalUser@10.0.10.201` |
+| SSH key | `3DConvert/id_ed25519_windows` (gitignored, backed up locally) |
+| Rhino | Rhino 8 (licensed via Zoo at 10.0.1.161) |
+| Job dir | `C:\ProgramData\3dconvert\` |
+| Watcher | `C:\ProgramData\3dconvert\rh_watcher.ps1` |
+
+The watcher must be running in a **non-elevated** PowerShell in LocalUser's interactive RDP session for both DWG and 3DM conversion to work. It is not auto-started — run it manually after any reboot:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:\ProgramData\3dconvert\rh_watcher.ps1"
+```
+
+---
+
+## Outstanding Actions (across all systems)
+
+**Security — rotate credentials:**
+- [ ] Rotate `root` password on Proxmox cluster (exposed in chat history).
+- [ ] Rotate `rebus` user password on all VMs.
+- [ ] Rotate Proxy LXC `root` password (`R3bu5Ind!Proxy`).
+- [ ] Rotate keepalived VRRP `auth_pass rebus123`.
+- [ ] Rotate MinIO credentials on both Speckle VMs (`minioadmin`/`minioadmin`).
+
+**Backups:**
+- [ ] Configure backup schedules on Speckle prod and Speckle DEV VMs.
+- [ ] Copy backups off-server for disaster recovery (S3, SFTP, or Windows share).
+
+**Infrastructure:**
+- [ ] Add `request_body` size limits and `/explorer` path to Caddy (see `proxy/SETUP_NOTES.md`).
+- [ ] Add upstream git remote on dev VM: `git remote add upstream git@github.com:specklesystems/speckle-server.git`.
+- [ ] **3DConvert — rebuild Docker image** — all changes are hot-patched into the running container. Rebuild: `cd /home/rebus/3dconvert && DOCKER_BUILDKIT=0 docker build --no-cache -t 3dconvert:latest . && docker compose up -d`.
+- [ ] **3DConvert — auto-start rh_watcher.ps1** on RB-DA2-PC01 — currently requires manual start in RDP session after every reboot. Set up Task Scheduler with interactive session.
+- [ ] **GitHub deploy key on prod VM** — prod VM has no GitHub SSH key, requiring bundle relay through dev VM to push. Add a deploy key to avoid this.
+**Completed (2026-05-05, session 6):**
+- [x] Container/repo drift sync — captured 5 hot-patches that were live in the running container but never committed: `app/admin.html` (full UI was truncated in repo at line 1188), `app/router.py` (non-fatal try/except around GLB preview), `app/writer.py` (flat IFC hierarchy: storeys directly under `IfcProject`, no `IfcSite`/`IfcBuilding`), `app/converters/rhino_conv.py` (the int() casts from session 5), and a doc copy of `app/writer_glb.py`. Now committed to `main` as `bd355af` and pushed via dev VM bundle relay. Prod VM `/home/rebus/3dconvert` fast-forwarded; container `b18c428dc411` re-synced via `docker cp`. The previously-broken in-container `writer_glb.py` (missing `return` statements) was overwritten with the correct repo version as a bonus.
+- [x] Face-array contract fix — `ValueError: cannot reshape array of size 6547 into shape (3)` in `writer_speckle.py:100`. The IronPython script in `rhino_conv.py` was emitting Speckle vertex-count-prefixed faces (`[3,a,b,c, 4,a,b,c,d, ...]`) but `writer_speckle.py` expects a flat triangle index list so it can `reshape(-1, 3)` and add the prefix itself. Other converters (trimesh, dxf) already follow this convention. Fixed in `_extract_mesh()` to emit only triangles, splitting quads into `(a,b,c)` and `(a,c,d)`. Committed as `ac09f70`.
+- [x] Post-timeout job tracking — `asyncio.wait_for(loop.run_in_executor(None, convert_file, ...), timeout=900)` cancels the await but cannot kill the worker thread, which keeps running and may still complete its Speckle push. Confirmed by a 239 MB `.3dm` whose UI showed timeout at `wait_for` fire (10:53:28 UTC) but whose Speckle commit landed 22 s later (10:53:50 UTC). Without tracking, the row stayed `failed` forever and the upload was invisible. Fix in `90f077f`: new `result_url TEXT` column on `jobs` table; `db.job_complete_late` promotes `failed` → `complete` and persists URL; `main._run_async_job` now wraps the executor future in `asyncio.shield` and on `TimeoutError` schedules an unawaited `_finalize_post_timeout` task that awaits the real future, reads `output_path` for the Speckle URL, and calls `mark_complete_late`. `GET /jobs/{id}` now surfaces `speckle_url` from the persisted column instead of the temp file (which is TTL-cleaned). The standard happy path also persists URL durably.
+- [x] Retroactive backfill — job `e997250e-4fb8-47ba-939a-652720d0c7d0` (`pnx test.3dm`, 239 MB) updated to `status=complete` with `result_url=https://speckle.rebus.industries/projects/006607f376/models/6dea1b8f09@b7d4a31e97`, since we'd already verified via Speckle GraphQL that the commit landed.
+- [x] Bundle-relay workflow validated end-to-end Windows → dev VM → GitHub → prod VM → container, three times this session.
+
+**Completed (2026-05-05, session 5):**
+- [x] IronPython JSON serialization fix — `.NET System.Byte` (color channels from `ObjectColor.R/G/B`) and `System.Int32` (mesh face indices `MeshFace.A/B/C/D`) are not JSON-serializable in IronPython 2.7. `json.dump` was raising `TypeError` mid-write, truncating the JSON file at the `"color": [` boundary. Fixed by wrapping all .NET integer values with explicit `int()` in `_color()` and `_extract_mesh()` in the embedded `_RHINO_SCRIPT_CONTENT`.
+- [x] `.cursorrules` created at `3DConvert/` — full architectural context for Cursor-based development.
+
+**Completed (2026-05-05, session 4):**
+- [x] `.3dm` conversion rewritten — now uses same RB-DA2-PC01 watcher pipeline as DWG (not RhinoCompute). `rhino_conv.py` drops SSH job with `CONV_INPUT`/`CONV_OUTPUT`/`CONV_LOG`; embedded `_RHINO_SCRIPT_CONTENT` uploaded per-job as `rh_convert.py`. IronPython script opens file via `RunScript('-_Open')`, resolves block instances recursively via `InstanceReferenceGeometry`/`ParentIdefIndex`/`Xform` (no `-_Explode`), meshes NURBS/Brep via `rg.Mesh.CreateFromBrep`, applies Z-up→Y-up coordinate conversion `(x,y,z)→(x,-z,y)`, writes JSON with per-object vertex/face/layer/color data. Container parses JSON → Speckle meshes. Direct file write (no atomic rename — `os.rename` unreliable on Windows/IronPython).
+- [x] Removed dependency on RhinoCompute for `.3dm` — RhinoCompute (10.0.200.14) is no longer in the `.3dm` conversion path.
+
+**Completed (2026-05-01, session 3):**
+- [x] DWG conversion via Rhino 8 watcher on RB-DA2-PC01 — complete end-to-end pipeline. `dwg_conv.py` SSH job-drop architecture; `rh_watcher.ps1` interactive-session watcher; Rhino IronPython script (Import → Explode x2 → Mesh → SaveAs .3dm); `SUPPORTED_EXTENSIONS` added. All committed to `CheekiSkrub/3DConvert`.
+- [x] Git repos created and pushed to GitHub — `CheekiSkrub/3DConvert` and `CheekiSkrub/REBUS-Speckle`.
+- [x] `.env` and credentials backed up to `D:\Documents\Claude\REBUS System\3dconvert.env.backup`.
+
+**Completed (2026-05-01, session 2):**
+- [x] 3DConvert UI bug fix — DWG uploads showed as failed even though Speckle push succeeded. Three-part fix: (1) `writer_glb.py`: numpy-safe empty check; (2) `main.py`: added `import logging as _log`; (3) `router.py`: GLB preview write wrapped in non-fatal `try/except`.
+- [x] Frontend v2.3.0 — Full collectionType-aware sidebar labels deployed to prod + dev.
+- [x] 3DConvert Speckle push — full pipeline working: `writer_speckle.py`, `router.py`, `jobs.py` all updated.
+- [x] 3DConvert Speckle API integration — portal-ready endpoints, admin Speckle tab, `db.py` settings table.
+
+**Completed (2026-04-30):**
+- [x] RhinoCompute RHINO_TOKEN set — Core-hour billing token installed, geometry API confirmed working.
+- [x] `rhino_conv.py` RhinoCompute request format fixed.
+
+**Completed (2026-04-29):**
+- [x] RhinoCompute deployed — VMID 204, 10.0.200.14, Rhino 8.30 + compute 8.x via IIS.
+- [x] 3DConvert vertex guards removed — full resolution output.
+- [x] iFrame embedding, V3 named views, camera geometry fix, version strings.
+- [x] Custom preview-service deployed. Unified build versioning v2.1.0 on prod + dev.
+
+---
+
+## Where to Look for More Detail
+
+| Topic | File |
+|---|---|
+| Proxy config, Caddy, keepalived, cert sync | `proxy/SETUP_NOTES.md` |
+| Speckle production — stack, backups, email, troubleshooting | `speckle/SETUP_NOTES.md` |
+| Speckle dev — VM setup, GitHub, docker-compose, update workflow | `speckle-dev/SETUP_NOTES.md` |
+| Erugo file sharing — setup, storage, update | `erugo/SETUP_NOTES.md` |
+| RhinoCompute REST API (VMID 204) | `rhinocompute/SETUP_NOTES.md` |
+| 3DConvert service — architecture, deployment, DWG watcher | `3DConvert/SETUP_NOTES.md` |
+| Full cluster workload table, SSH config, incident log | `README.md` |
+
+--- REBUS-System/README.md ---
+# REBUS System — Infrastructure Reference
+
+Last updated: 2026-05-05
+
+This folder is the single source of truth for the REBUS datacenter cluster (`REBUS-Cluster1`). Each subfolder is a deployment or infrastructure component with full setup notes, config files, and runbook commands.
+
+> **Claude:** read [`CLAUDE.md`](CLAUDE.md) first for a quick-start session briefing.
+
+---
+
+## Infrastructure
+
+| Folder | Component | Notes |
+|---|---|---|
+| [`proxy/`](proxy/SETUP_NOTES.md) | Caddy HA reverse proxy pair | Proxy1 (LXC 251, SRV01) + Proxy2 (LXC 252, SRV02). keepalived VIP `10.0.200.250`. |
+
+## Deployments
+
+| Folder | Service | URL | Status |
+|---|---|---|---|
+| [`speckle/`](speckle/SETUP_NOTES.md) | Speckle Server (production) | https://speckle.rebus.industries | ✅ Running |
+| [`speckle-dev/`](speckle-dev/SETUP_NOTES.md) | Speckle Server (dev / pre-release) | https://speckle-dev.rebus.industries | ✅ Running |
+| [`erugo/`](erugo/SETUP_NOTES.md) | Erugo file sharing | https://transfer.rebus.industries | ✅ Running |
+| [`rhinocompute/`](rhinocompute/SETUP_NOTES.md) | RhinoCompute REST API | https://compute.rebus.industries | ✅ Running |
+| [`3DConvert/`](3DConvert/SETUP_NOTES.md) | 3D file conversion → Speckle | https://convert.rebus.industries | ✅ Running (hot-patched) |
+
+> To add a new deployment, create a subfolder (`n8n/`, `outline/`, etc.) with a `SETUP_NOTES.md` following the same pattern, and add a row above.
+
+---
+
+## Related repositories
+
+This repo is the **cluster source-of-truth**. The following repos also exist as standalone repos and may contain the live config / source for individual services:
+
+| Repo | Purpose |
+|---|---|
+| `CheekiSkrub/3DConvert` | 3DConvert service source (FastAPI app + Docker build) |
+| `CheekiSkrub/REBUS-Proxy-config` | Proxy Caddy + keepalived configuration (Proxy1/Proxy2) |
+| `CheekiSkrub/REBUS-Erugo-Deploy` | Erugo deployment/config |
+| `CheekiSkrub/REBUS-Speckle` | Speckle prod config (compose + runbooks) |
+| `CheekiSkrub/speckle-server-dev` | Speckle fork (custom frontend/server/preview) |
+
+---
+
+## SSH Keys
+
+| File | Grants access to | Fingerprint |
+|---|---|---|
+| `id_ed25519_proxmox` | `root` on all 3 Proxmox nodes | `SHA256:1jltZct/1bFj5qNJpJBZujKqcsSk8HPVmUIa8nhQf9M` |
+| `id_ed25519_rebus` | `rebus` user on all Linux VMs (10.0.200.11, 10.0.200.112, …) | `SHA256:tLLwaEfPgk23cBEdPAYVUNDvX6dxbqVlU1TeEe90Md8` |
+
+### Public keys
+
+**Proxmox** (`id_ed25519_proxmox.pub`):
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIADD2ySsRy5CagodLZKhkSJyiiT27SgNF+HquqZUDMYi dom@proxmox-2026-04-27
+```
+Installed at: `/etc/pve/priv/authorized_keys` (cluster-wide via pmxcfs).
+
+**REBUS VMs** (`id_ed25519_rebus.pub`):
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGP9k0Dr/uSaALO1GcAnYLIMjt8YzHWalTcdAMLyjz+H dom@rebus-vms-2026-04-27
+```
+Installed on: `rebus@10.0.200.11` (Speckle-Server), `rebus@10.0.200.112` (Speckle-DEV). Add to new VMs by appending to `~rebus/.ssh/authorized_keys`.
+
+### Installing keys on Windows
+
+```powershell
+$src = "D:\Documents\Claude\REBUS System"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
+Copy-Item "$src\id_ed25519_proxmox*","$src\id_ed25519_rebus*" "$env:USERPROFILE\.ssh\"
+icacls "$env:USERPROFILE\.ssh\id_ed25519_proxmox" /inheritance:r /grant:r "${env:USERNAME}:F"
+icacls "$env:USERPROFILE\.ssh\id_ed25519_rebus" /inheritance:r /grant:r "${env:USERNAME}:F"
+```
+
+`%USERPROFILE%\.ssh\config`:
+
+```
+Host proxmox proxmox-srv01
+  HostName 10.0.1.101
+  User root
+  IdentityFile ~/.ssh/id_ed25519_proxmox
+  IdentitiesOnly yes
+
+Host proxmox-srv02
+  HostName 10.0.1.102
+  User root
+  IdentityFile ~/.ssh/id_ed25519_proxmox
+  IdentitiesOnly yes
+
+Host proxmox-srv03
+  HostName 10.0.1.103
+  User root
+  IdentityFile ~/.ssh/id_ed25519_proxmox
+  IdentitiesOnly yes
+
+Host speckle
+  HostName 10.0.200.11
+  User rebus
+  IdentityFile ~/.ssh/id_ed25519_rebus
+  IdentitiesOnly yes
+
+Host speckle-dev
+  HostName 10.0.200.112
+  User rebus
+  IdentityFile ~/.ssh/id_ed25519_rebus
+  IdentitiesOnly yes
+```
+
+To reach inside an LXC without leaving Windows: `ssh proxmox -t pct enter 251`
+
+---
+
+## Cluster Overview
+
+### Proxmox cluster — `REBUS-Cluster1`
+
+| Node | IP | Notes |
+|---|---|---|
+| RB-DA2-SRV01 | 10.0.1.101 | PVE 9.1.1, kernel 6.17.2-1-pve. vmbr0=10.0.1.101/24, vmbr1.20=10.0.20.101/24. |
+| RB-DA2-SRV02 | 10.0.1.102 | PVE 9.1.1. Hosts Proxy2 (LXC 252) + DC2 (VM 102). |
+| RB-DA2-SRV03 | 10.0.1.103 | PVE 9.1.1. Hosts Speckle-Server, Speckle-DEV + utility VMs. |
+
+### Workloads
+
+| Node | VMID | Type | Name | IP | Status | Notes |
+|---|---|---|---|---|---|---|
+| SRV01 | 251 | LXC | RB-DA2-Proxy1 | 10.0.200.251 | running | Caddy + keepalived MASTER |
+| SRV01 | 101 | VM | DC1 | — | running | 16 GB / 512 GB |
+| SRV01 | 151 | VM | SYS01 | — | running | 16 GB |
+| SRV02 | 252 | LXC | RB-DA2-Proxy2 | 10.0.200.252 | running | Caddy + keepalived BACKUP |
+| SRV02 | 102 | VM | DC2 | — | running | 16 GB / 512 GB |
+| SRV03 | 201 | VM | Speckle-Server | 10.0.200.11 | running | Speckle prod + 3DConvert container. See [`speckle/`](speckle/SETUP_NOTES.md), [`3DConvert/`](3DConvert/SETUP_NOTES.md) |
+| SRV03 | 202 | VM | n8n | — | stopped | |
+| SRV03 | 203 | VM | Erugo | 10.0.200.13 | running | See [`erugo/`](erugo/SETUP_NOTES.md) |
+| SRV03 | 204 | VM | RhinoCompute | 10.0.200.14 | running | Windows VM, Rhino 8.30 + compute 8.x via IIS. See [`rhinocompute/`](rhinocompute/SETUP_NOTES.md) |
+| SRV03 | 301 | VM | Speckle-DEV | 10.0.200.112 | running | See [`speckle-dev/`](speckle-dev/SETUP_NOTES.md) |
+| SRV03 | 901 | VM | WinServ25 | — | stopped | |
+| SRV03 | 902 | VM | Ubuntu-24.04.4 | — | stopped | Template/spare |
+
+### Reverse proxy (Caddy HA pair)
+
+- **VIP:** `10.0.200.250` (keepalived VRRP, held by Proxy1 normally)
+- **Proxy1:** LXC 251, SRV01, `10.0.200.251` — keepalived MASTER (priority 200)
+- **Proxy2:** LXC 252, SRV02, `10.0.200.252` — keepalived BACKUP (priority 150)
+- Caddy v2.11.2. Caddyfile is identical on both nodes.
+- TLS cert sync: Proxy2 rsyncs certs from Proxy1 every 6h via systemd timer.
+- Caddy admin API: `127.0.0.1:2019` on both.
+
+Current Caddyfile routes all domains. To add a new service, add a block on **both** Proxy1 (`pct exec 251 -- ...`) and Proxy2 (`pct exec 252 -- ...`), then `caddy reload`.
+
+---
+
+## Incident & Change Log
+
+### 2026-04-27 — `speckle.rebus.industries` 502s (resolved)
+Root cause: `speckle-update` called `docker compose -f docker-compose.yml up -d`, suppressing auto-discovery of `docker-compose.override.yml` and dropping host port bindings. Fix: script updated to use `--project-directory /opt/speckle` (no explicit `-f`). See [`speckle/SETUP_NOTES.md`](speckle/SETUP_NOTES.md) for full details.
+
+### 2026-04-27 — HA + ACME for speckle.rebus.industries (resolved)
+Proxy2 had no TLS cert and could not issue one (ACME validation always reached Proxy1 via VIP). Fixed with cert rsync from Proxy1 → Proxy2 every 6h via systemd timer. See [`speckle/SETUP_NOTES.md`](speckle/SETUP_NOTES.md).
+
+### 2026-04-27 — Speckle iframe embedding enabled
+Added `header` block to `speckle.rebus.industries` Caddy config on both proxies: strips `X-Frame-Options: deny` and sets `Content-Security-Policy: frame-ancestors 'self' https://app.rebus.industries`. Speckle viewer now embeds correctly in `app.rebus.industries`. See [`proxy/Caddyfile`](proxy/Caddyfile).
+
+### 2026-04-27 — Erugo deployed
+Cloned VM 201 → VM 203, cleared Speckle, deployed Erugo (`wardy784/erugo:latest`) at `transfer.rebus.industries`. Single container, SQLite, no DB service. See [`erugo/SETUP_NOTES.md`](erugo/SETUP_NOTES.md).
+
+### 2026-04-27 — Speckle-DEV deployed
+Cloned VM 201 → VM 301, assigned IP 10.0.200.112, configured for `:latest` images and `speckle-dev.rebus.industries`. GitHub fork `CheekiSkrub/speckle-server-dev` created with `rebus-dev` branch. See [`speckle-dev/SETUP_NOTES.md`](speckle-dev/SETUP_NOTES.md).
+
+### 2026-04-29 — Custom Speckle frontend (`speckle-frontend-2-rebus:v2.0.0`) deployed to production
+Production switched from upstream `speckle/speckle-frontend-2` to the REBUS custom build. Patches: iframe embedding, V3 named camera views, camera geometry suppression (no-op converter in SpeckleConverter.ts), hardcoded version string. Built on dev VM; transferred via `docker save | gzip`; `speckle-update` script rewritten to select from local custom images only (no Docker Hub).
+
+### 2026-04-29 — Backup scripts fixed and scheduling TUI deployed (all VMs)
+`backup.sh` on both Speckle VMs had hardcoded `/home/ubuntu/backups` path (EC2 artifact) — corrected to `/home/rebus/`. Shadow scripts at `~/bin/` deployed on all VMs to work around root-owned `/usr/local/bin/` and `sudo bash` calls (rebus has no passwordless sudo on dev VM). Interactive backup TUI deployed to all three VMs (Speckle prod, Speckle DEV, Erugo) with scheduling menu (Daily/Weekly/Monthly via user crontab).
+
+---
+
+## Outstanding Actions
+
+**Security — rotate credentials:**
+- [ ] Rotate `root` password on the Proxmox cluster (was exposed in chat history).
+- [ ] Rotate `rebus` user password on all VMs.
+- [ ] Rotate Proxy LXC `root` password (`R3bu5Ind!Proxy` — exposed in chat).
+- [ ] Rotate keepalived VRRP `auth_pass rebus123`.
+- [ ] Rotate MinIO default credentials on both Speckle VMs (`minioadmin` / `minioadmin`).
+
+**Backups:**
+- [ ] Configure backup schedule on each VM — use the desktop shortcut TUI, option 5. Not yet configured on Speckle prod or Speckle DEV. (Erugo: TUI deployed, schedule status unknown.)
+- [ ] Copy backups off-server for disaster recovery (S3, SFTP, or Windows share). All three VMs.
+- [ ] Root-owned `/home/rebus/backups/` on Speckle prod — one backup from 2026-04-29 exists there, readable but cannot be deleted without root. Not a blocker; all future backups go to `/home/rebus/speckle-backups/`.
+
+**Infrastructure:**
+- [ ] Add `/explorer` path matcher and `request_body` size limits to Caddy (see `proxy/SETUP_NOTES.md`).
+- [ ] Add upstream git remote on dev VM: `git remote add upstream git@github.com:specklesystems/speckle-server.git`.
+
+**Completed:**
+- [x] Speckle iframe embedding enabled for `app.rebus.industries`. (Done 2026-04-27.)
+- [x] REBUS custom frontend `v2.0.0` deployed to both prod and dev. (Done 2026-04-29.)
+- [x] Backup TUI with scheduling deployed to all three VMs. (Done 2026-04-29.)
+- [x] Production `speckle-update` script rewritten — custom images only, no Docker Hub. (Done 2026-04-29.)
+
+--- REBUS-System/Rebus.json ---
+{
+  "links": {
+    "default": "rgb(241, 89, 42)",
+    "hover": "rgb(255, 115, 70)",
+    "active": "rgb(200, 65, 20)",
+    "disabled": "rgba(241, 89, 42, 0.3)"
+  },
+  "buttons": {
+    "primary": {
+      "default": {
+        "background": "rgb(241, 89, 42)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 2px 8px rgba(241, 89, 42, 0.35)"
+      },
+      "hover": {
+        "background": "rgb(255, 107, 58)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 3px 12px rgba(241, 89, 42, 0.45)"
+      },
+      "active": {
+        "background": "rgb(210, 72, 30)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 2px 6px rgba(241, 89, 42, 0.3)"
+      },
+      "disabled": {
+        "background": "rgba(241, 89, 42, 0.3)",
+        "text": "rgba(255, 255, 255, 0.4)",
+        "boxShadow": "none"
+      }
+    },
+    "secondary": {
+      "default": {
+        "background": "rgb(20, 20, 20)",
+        "text": "rgb(220, 220, 220)",
+        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.4)"
+      },
+      "hover": {
+        "background": "rgb(32, 32, 32)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 3px 8px rgba(0, 0, 0, 0.5)"
+      },
+      "active": {
+        "background": "rgb(44, 44, 44)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 2px 4px rgba(0, 0, 0, 0.4)"
+      },
+      "disabled": {
+        "background": "rgba(20, 20, 20, 0.5)",
+        "text": "rgba(200, 200, 200, 0.3)",
+        "boxShadow": "none"
+      }
+    }
+  },
+  "uploader": {
+    "background": "rgb(10, 10, 10)",
+    "text": "rgb(220, 220, 220)",
+    "boxShadow": "0 4px 16px rgba(0, 0, 0, 0.6)",
+    "header": {
+      "background": "rgb(0, 0, 0)",
+      "text": "rgb(255, 255, 255)"
+    },
+    "item": {
+      "background": "rgb(18, 18, 18)",
+      "text": "rgb(220, 220, 220)",
+      "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.3)"
+    }
+  },
+  "panel": {
+    "background": "rgb(8, 8, 8)",
+    "text": "rgb(220, 220, 220)",
+    "boxShadow": "0 4px 20px rgba(0, 0, 0, 0.6)",
+    "item": {
+      "background": "rgb(16, 16, 16)",
+      "text": "rgb(220, 220, 220)",
+      "boxShadow": "0 1px 4px rgba(0, 0, 0, 0.2)",
+      "hover": {
+        "background": "rgb(26, 26, 26)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 2px 8px rgba(0, 0, 0, 0.3)"
+      },
+      "action": {
+        "hover": {
+          "backgroundFrom": "rgba(241, 89, 42, 0.08)",
+          "backgroundTo": "rgba(241, 89, 42, 0.14)"
+        }
+      }
+    },
+    "header": {
+      "background": "rgb(241, 89, 42)",
+      "text": "rgb(255, 255, 255)",
+      "boxShadow": "0 2px 10px rgba(241, 89, 42, 0.3)"
+    },
+    "textAlt": "rgb(120, 120, 120)",
+    "subheader": {
+      "background": "rgb(12, 12, 12)",
+      "text": "rgb(200, 200, 200)",
+      "boxShadow": "0 1px 0 rgba(255, 255, 255, 0.05)"
+    },
+    "nav": {
+      "item": {
+        "background": "rgb(14, 14, 14)",
+        "text": "rgb(200, 200, 200)",
+        "hover": {
+          "background": "rgb(241, 89, 42)",
+          "text": "rgb(255, 255, 255)",
+          "boxShadow": "0 2px 8px rgba(241, 89, 42, 0.3)"
+        }
+      }
+    },
+    "section": {
+      "background": "rgb(14, 14, 14)",
+      "text": "rgb(220, 220, 220)",
+      "boxShadow": "0 1px 0 rgba(255, 255, 255, 0.04)",
+      "alt": {
+        "background": "rgb(20, 20, 20)",
+        "text": "rgb(220, 220, 220)",
+        "boxShadow": "0 1px 0 rgba(255, 255, 255, 0.03)"
+      }
+    }
+  },
+  "tabs": {
+    "bar": {
+      "background": "rgb(6, 6, 6)",
+      "boxShadow": "0 1px 0 rgba(255, 255, 255, 0.06)"
+    },
+    "tab": {
+      "background": "rgb(16, 16, 16)",
+      "text": "rgb(140, 140, 140)",
+      "hover": {
+        "background": "rgb(28, 28, 28)",
+        "text": "rgb(220, 220, 220)",
+        "boxShadow": "none"
+      },
+      "active": {
+        "background": "rgb(241, 89, 42)",
+        "text": "rgb(255, 255, 255)",
+        "boxShadow": "0 -1px 6px rgba(241, 89, 42, 0.3)"
+      }
+    }
+  },
+  "table": {
+    "background": "rgb(8, 8, 8)",
+    "text": "rgb(220, 220, 220)",
+    "boxShadow": "0 3px 12px rgba(0, 0, 0, 0.5)",
+    "header": {
+      "background": "rgb(241, 89, 42)",
+      "text": "rgb(255, 255, 255)",
+      "boxShadow": "0 1px 6px rgba(241, 89, 42, 0.3)"
+    },
+    "row": {
+      "background": "rgb(14, 14, 14)",
+      "text": "rgb(220, 220, 220)",
+      "alt": {
+        "background": "rgb(20, 20, 20)",
+        "text": "rgb(220, 220, 220)"
+      }
+    }
+  },
+  "input": {
+    "background": "rgb(14, 14, 14)",
+    "text": "rgb(220, 220, 220)",
+    "boxShadow": "inset 0 1px 3px rgba(0, 0, 0, 0.3)",
+    "border": {
+      "default": "rgb(40, 40, 40)",
+      "hover": "rgb(241, 89, 42)",
+      "focus": "rgb(241, 89, 42)"
+    },
+    "placeholder": "rgb(80, 80, 80)"
+  },
+  "checkbox": {
+    "background": "rgb(14, 14, 14)",
+    "border": "rgb(50, 50, 50)",
+    "checked": {
+      "background": "rgb(241, 89, 42)",
+      "check": "rgb(255, 255, 255)",
+      "boxShadow": "0 1px 4px rgba(241, 89, 42, 0.3)"
+    }
+  },
+  "label": {
+    "text": "rgb(200, 200, 200)"
+  },
+  "progressBar": {
+    "background": "rgb(20, 20, 20)",
+    "fill": "linear-gradient(90deg, rgb(241, 89, 42) 0%, rgb(255, 120, 70) 100%)",
+    "text": "rgb(220, 220, 220)",
+    "boxShadow": "0 1px 4px rgba(0, 0, 0, 0.3)"
+  },
+  "overlay": {
+    "background": "rgba(0, 0, 0, 0.88)",
+    "backdropFilter": "blur(4px)"
+  },
+  "scrollbars": {
+    "track": "rgba(255, 255, 255, 0.03)",
+    "thumb": "rgba(241, 89, 42, 0.5)",
+    "thumbHover": "rgba(241, 89, 42, 0.8)",
+    "width": "6px",
+    "borderRadius": "3px",
+    "boxShadow": "none"
+  },
+  "dimensions": {
+    "button": {
+      "height": "50px",
+      "width": "100%",
+      "iconOnlyWidth": "50px",
+      "borderRadius": "10px"
+    },
+    "panel": {
+      "borderRadius": "10px"
+    },
+    "tabs": {
+      "borderRadius": "5px 5px 0 0"
+    },
+    "settings": {
+      "width": "100vw",
+      "height": "100vh"
+    }
+  }
+}
+
+--- REBUS-Speckle/docker-compose.yml ---
+version: '2.3'
+name: 'speckle-server'
+
+services:
+  postgres:
+    image: 'postgres:16.9-alpine'
+    restart: always
+    environment:
+      POSTGRES_DB: speckle
+      POSTGRES_USER: speckle
+      POSTGRES_PASSWORD: speckle
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data/
+
+  redis:
+    image: 'valkey/valkey:8-alpine'
+    restart: always
+    volumes:
+      - ./redis-data:/data
+
+  minio:
+    image: 'minio/minio'
+    command: server /data --console-address ":9001"
+    restart: always
+    volumes:
+      - ./minio-data:/data
+
+  speckle-frontend-2:
+    image: 'speckle-frontend-2-rebus:v2.0.0'
+    restart: always
+    environment:
+      NUXT_PUBLIC_SERVER_NAME: 'Speckle'
+      NUXT_PUBLIC_API_ORIGIN: 'https://speckle.rebus.industries'
+      NUXT_PUBLIC_BACKEND_API_ORIGIN: 'http://speckle-server:3000'
+      NUXT_PUBLIC_BASE_URL: 'https://speckle.rebus.industries'
+      NUXT_REDIS_URL: 'redis://redis'
+      NUXT_PUBLIC_SSL_ENABLED: 'true'
+      NUXT_PUBLIC_FF_LARGE_FILE_IMPORTS_ENABLED: 'true'
+      NUXT_PUBLIC_FF_NEXT_GEN_FILE_IMPORTER_ENABLED: 'true'
+      LOG_LEVEL: 'info'
+      LOG_PRETTY: 'true'
+    depends_on:
+      - speckle-server
+
+  speckle-server:
+    image: speckle/speckle-server:2.31.3-alpha.1254
+    restart: always
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - "try { require('node:http').request({headers: {'Content-Type': 'application/json'}, port:3000, hostname:'127.0.0.1', path:'/readiness', method: 'GET', timeout: 2000 }, (res) => { body = ''; res.on('data', (chunk) => {body += chunk;}); res.on('end', () => {process.exit(res.statusCode != 200 || body.toLowerCase().includes('error') ? 1 : 0);}); }).end(); } catch { process.exit(1); }"
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    environment:
+      CANONICAL_URL: 'https://speckle.rebus.industries'
+      PRIVATE_OBJECTS_SERVER_URL: 'http://speckle-server:3000'
+
+      SESSION_SECRET: 'a4e5aeb8abbfbdb6786663142e236de274f50e4a13a7708fe45e03e4cee08f52'
+
+      STRATEGY_LOCAL: 'true'
+      LOG_LEVEL: 'info'
+      LOG_PRETTY: 'true'
+
+      POSTGRES_URL: 'postgres'
+      POSTGRES_USER: 'speckle'
+      POSTGRES_PASSWORD: 'speckle'
+      POSTGRES_DB: 'speckle'
+
+      REDIS_URL: 'redis://redis'
+      PREVIEW_SERVICE_USE_PRIVATE_OBJECTS_SERVER_URL: 'true'
+      PREVIEW_SERVICE_REDIS_URL: 'redis://redis'
+      FILEIMPORT_SERVICE_USE_PRIVATE_OBJECTS_SERVER_URL: 'true'
+      FILEIMPORT_SERVICE_REDIS_URL: 'redis://redis'
+
+      S3_ENDPOINT: 'http://minio:9000'
+      S3_PUBLIC_ENDPOINT: 'https://speckle.rebus.industries:9000'
+      S3_ACCESS_KEY: 'minioadmin'
+      S3_SECRET_KEY: 'minioadmin'
+      S3_BUCKET: 'speckle-server'
+      S3_CREATE_BUCKET: 'true'
+      S3_REGION: ''
+
+      FILE_SIZE_LIMIT_MB: 1000
+      EMAIL: 'true'
+      EMAIL_HOST: 'smtp.gmail.com'
+      EMAIL_PORT: '587'
+      EMAIL_USERNAME: 'it@rebus.industries'
+      EMAIL_PASSWORD: 'meipodqirkiarugh'
+      EMAIL_FROM: 'speckle@rebus.industries'
+      EMAIL_SECURE: 'false'
+      EMAIL_REQUIRE_TLS: 'true'
+
+      FRONTEND_ORIGIN: 'https://speckle.rebus.industries'
+      ONBOARDING_STREAM_URL: 'https://latest.speckle.systems/projects/843d07eb10'
+
+      FILEIMPORT_QUEUE_POSTGRES_URL: 'postgresql://speckle:speckle@postgres/speckle'
+      FF_NEXT_GEN_FILE_IMPORTER_ENABLED: 'true'
+
+    depends_on:
+      - postgres
+      - redis
+      - minio
+
+  preview-service:
+    image: speckle/speckle-preview-service:2.31.3-alpha.1254
+    restart: always
+    mem_limit: '3000m'
+    memswap_limit: '3000m'
+    environment:
+      PORT: '3001'
+      LOG_LEVEL: 'info'
+      LOG_PRETTY: 'true'
+      REDIS_URL: 'redis://redis'
+    depends_on:
+      - speckle-server
+
+  webhook-service:
+    image: speckle/speckle-webhook-service:2.31.3-alpha.1254
+    restart: always
+    environment:
+      LOG_LEVEL: 'info'
+      LOG_PRETTY: 'true'
+      PG_CONNECTION_STRING: 'postgres://speckle:speckle@postgres/speckle'
+    depends_on:
+      - speckle-server
+
+  fileimport-service:
+    image: speckle/speckle-fileimport-service:2.31.3-alpha.1254
+    restart: always
+    environment:
+      LOG_LEVEL: 'info'
+      LOG_PRETTY: 'true'
+      SPECKLE_SERVER_URL: 'http://speckle-server:3000'
+      PG_CONNECTION_STRING: 'postgres://speckle:speckle@postgres/speckle'
+      REDIS_URL: 'redis://redis'
+    depends_on:
+      - speckle-server
+
+--- REBUS-Speckle/docker-compose.override.yml ---
+name: 'speckle-server'
+
+services:
+  speckle-frontend-2:
+    image: speckle-frontend-2-rebus:v2.3.0
+    environment:
+      - NUXT_PUBLIC_FF_SAVED_VIEWS_ENABLED=true
+    ports:
+      - '0.0.0.0:80:8080'
+
+  speckle-server:
+    image: speckle-server-rebus:v2.1.0
+    environment:
+      - FF_SAVED_VIEWS_ENABLED=true
+    ports:
+      - '0.0.0.0:3000:3000'
+
+  preview-service:
+    image: speckle-preview-service-rebus:v2.1.0
+
+  minio:
+    ports:
+      - '0.0.0.0:9000:9000'
+      - '0.0.0.0:9001:9001'
+
+--- REBUS-Speckle/Caddyfile ---
+# Main Speckle app - HTTP only (local network, no TLS)
+http://192.168.1.38 {
+
+	# API and backend routes go directly to speckle-server
+	@backend path /graphql /explorer /auth/* /objects/* /preview/* /api/* /static/*
+
+	handle @backend {
+		request_body {
+			max_size 1000MB
+		}
+		reverse_proxy speckle-server:3000 {
+			header_down -X-Frame-Options
+			header_down -Content-Security-Policy
+			header_down Content-Security-Policy "frame-ancestors *"
+		}
+	}
+
+	# Everything else goes to the frontend
+	handle {
+		request_body {
+			max_size 100MB
+		}
+		reverse_proxy speckle-frontend-2:8080 {
+			header_down -X-Frame-Options
+			header_down -Content-Security-Policy
+			header_down Content-Security-Policy "frame-ancestors *"
+		}
+	}
+}
+
+# MinIO S3 API - used for file uploads/downloads
+:9000 {
+	reverse_proxy minio:9000
+}
+
+# MinIO Console - admin web UI
+:9001 {
+	reverse_proxy minio:9001
+}
+
+--- REBUS-Speckle/SETUP_NOTES.md ---
+# Speckle Server Setup Notes
+Date: 2026-02-25 (last updated: 2026-04-27)
+
+> A copy of this file is mirrored at `D:\Documents\Claude\REBUS System\speckle\SETUP_NOTES.md` on the admin workstation. When updating one, update the other.
+
+## Server Details
+- **Current URL:** https://speckle.rebus.industries
+- **Host:** RB-DA2-VM-SpeckleServer (Ubuntu 24.04 VM)
+- **Proxmox node:** RB-DA2-SRV03, VMID 201
+- **Local IP:** 10.0.200.11 (VLAN 200)
+- **OS:** Ubuntu 24.04
+- **Speckle Version:** 2.31.2 (as of 2026-04-27)
+- **Docker:** CE (installed via apt)
+
+## History
+- **2026-02-25:** Originally deployed on AWS EC2 (3.226.189.130) at https://speckle.rebus.industries
+- **2026-03-12:** Migrated from EC2 to local Ubuntu VM. Full migration: pg_dumpall +
+  bind-mount snapshots transferred via Windows host. EC2 remained live throughout.
+  All data confirmed intact post-migration. Initial local IP was 192.168.1.38.
+- **2026-03-17:** Moved into datacenter. Caddy removed from this host — external reverse
+  proxy LXCs (RB-DA2-Proxy1 / RB-DA2-Proxy2) now handle TLS termination and routing.
+  Services exposed directly on host ports.
+- **2026-04-?? (approx):** VM re-IPed to 10.0.200.11 on VLAN 200 (datacenter networking).
+- **2026-04-27:** **Incident** — Caddy returning 502 for speckle.rebus.industries. Root
+  cause: `speckle-update` calls `docker compose -f docker-compose.yml up -d` with an
+  explicit `-f`, which suppresses Compose's auto-discovery of `docker-compose.override.yml`.
+  Containers came up healthy but with no host port bindings, so the external proxy could
+  not reach them. Fix: ran `cd /opt/speckle && docker compose down && docker compose up -d`
+  to recreate with the override applied. **Permanent fix to `speckle-update` is still
+  outstanding** — see "Known issues" section below. Stack also bumped 2.30.0 → 2.31.2 in
+  the same window via three earlier `speckle-update` runs.
+
+## Architecture
+- **External reverse proxy** — TLS termination and path-based routing. Runs as Caddy in
+  two LXC containers (RB-DA2-Proxy1, RB-DA2-Proxy2) in HA via keepalived. Public DNS
+  `speckle.rebus.industries` → public IP → VIP `10.0.200.250` → currently Proxy1.
+- **speckle-frontend-2** — Nuxt frontend, exposed on host port 80 (receives all non-API traffic)
+- **speckle-server** — main API backend, exposed on host port 3000 (receives /graphql, /api/*, etc.)
+- **preview-service** — 3D preview generation
+- **webhook-service** — webhook handling
+- **fileimport-service** — file import processing
+- **postgres** — database (data at ./postgres-data)
+- **redis (valkey)** — cache (data at ./redis-data)
+- **minio** — object/file storage (data at ./minio-data)
+
+## URLs
+| URL | Purpose |
+|-----|---------|
+| https://speckle.rebus.industries | Main app (via external proxy) |
+| https://speckle.rebus.industries:9000 | MinIO S3 API |
+| http://10.0.200.11:9001 | MinIO admin console (LAN only) |
+
+## Host Port Bindings
+Declared in `docker-compose.override.yml`. The external proxy connects to these:
+
+| Host Port | Service | Notes |
+|-----------|---------|-------|
+| 80 | speckle-frontend-2 | All non-API traffic |
+| 3000 | speckle-server | API paths: /graphql /api/* /auth/* /objects/* /preview/* /static/* |
+| 9000 | MinIO S3 API | |
+| 9001 | MinIO console | |
+
+## MinIO Credentials
+- Username: `minioadmin`
+- Password: `minioadmin`
+
+> **TODO:** rotate these — they are the install defaults.
+
+## Email Configuration
+- **SMTP Host:** smtp.gmail.com:587
+- **Auth account:** it@rebus.industries (App Password)
+- **FROM address:** speckle@rebus.industries
+- **"Send As"** configured in Gmail for it@rebus.industries → speckle@rebus.industries
+- **Forwarding:** speckle@rebus.industries forwards to it@rebus.industries (set up in Google Admin)
+- Replies to Speckle emails go to speckle@rebus.industries → forwarded to it@rebus.industries
+
+## Firewall — Required Open Ports
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 22   | TCP | SSH |
+| 80   | TCP | HTTP (main app) |
+| 443  | TCP | HTTPS (reserved — TLS terminates upstream at the proxy LXCs) |
+| 9000 | TCP | MinIO S3 API |
+| 9001 | TCP | MinIO console |
+
+UFW is active. Ports were opened with `ufw allow` on 2026-03-12.
+
+## SSH access
+- User `rebus` (password and key auth). Member of `sudo` and `docker` groups (so `docker compose` works without sudo).
+- An admin SSH key (`id_ed25519_rebus`, fingerprint `SHA256:tLLwaEfPgk23cBEdPAYVUNDvX6dxbqVlU1TeEe90Md8`)
+  is installed in `~rebus/.ssh/authorized_keys`. Private key lives on the admin workstation
+  at `D:\Documents\Claude\REBUS System\id_ed25519_rebus`.
+
+## File Locations
+- **Compose files:** `/opt/speckle/docker-compose.yml` + `/opt/speckle/docker-compose.override.yml`
+- **Database data:** `/opt/speckle/postgres-data/`
+- **Object storage:** `/opt/speckle/minio-data/`
+- **Redis data:** `/opt/speckle/redis-data/`
+- **Backup scripts:** `/opt/speckle/backup.sh`, `backup-setup.sh`, `backup.conf`
+- **Backup storage:** `/home/rebus/backups/`
+- **Backup log:** `/home/rebus/backups/backup.log`
+- **Historical Caddyfile:** `/opt/speckle/Caddyfile` — snapshot from when Caddy ran on
+  this host (pre-2026-03-17). Not in use; retained for reference (the iframe-embedding
+  header rules in particular are useful when configuring the external proxy).
+
+## Auto-start on Boot
+Docker CE (`docker.service`) is enabled as a systemd service and all containers have
+`restart: always`. Containers start automatically on reboot.
+If they don't, see the troubleshooting section below.
+
+## Useful Commands
+
+```bash
+# --- updates / lifecycle ---
+speckle-update                      # interactive update to latest stable/pre-release
+speckle-backup                      # run a backup immediately
+speckle-backup setup                # configure cron schedule
+speckle-backup list                 # list existing backups
+speckle-backup status               # show backup log
+
+# --- container inspection ---
+docker ps --format "table {{.Names}}\t{{.Status}}"
+cd /opt/speckle && docker compose logs -f speckle-server
+cd /opt/speckle && docker compose ps
+
+# --- compose lifecycle (always cd into /opt/speckle first) ---
+# IMPORTANT: cd in. Don't pass -f docker-compose.yml from outside —
+# that will silently drop the override file's port bindings (see Known issues).
+cd /opt/speckle && docker compose up -d
+cd /opt/speckle && docker compose restart
+cd /opt/speckle && docker compose down
+
+# --- Connect to postgres ---
+docker exec -it speckle-server-postgres-1 psql -U speckle -d speckle
+
+# --- Verify ports listening on host ---
+ss -ltn | awk 'NR==1 || /:80 |:443 |:3000 |:9000 |:9001 /'
+```
+
+## Backups
+
+### Backup scripts
+- **Run immediately:** `speckle-backup` or `sudo bash /opt/speckle/backup.sh`
+- **Configure schedule:** `speckle-backup setup` or `sudo bash /opt/speckle/backup-setup.sh`
+- **Config:** `/opt/speckle/backup.conf` (retention count — currently `14`)
+- **Log:** `/home/rebus/backups/backup.log`
+- **Storage:** `/home/rebus/backups/`
+
+### What each backup contains
+Each backup is a timestamped folder (e.g. `2026-03-12_16-00-00/`) containing:
+```
+speckle-db.dump          — PostgreSQL database (pg_dump custom format)
+minio-data.tar.gz        — MinIO object storage
+speckle-config.tar.gz    — docker-compose files, setup notes
+```
+
+### Restore database from backup
+```bash
+sudo docker exec -i speckle-server-postgres-1 \
+  pg_restore -U speckle -d speckle --clean \
+  < /home/rebus/backups/<timestamp>/speckle-db.dump
+```
+
+**Note:** Backups are local only — not copied off-server. (Open TODO.)
+
+## Resolved — `speckle-update` no longer strips host port bindings (fixed 2026-04-27)
+
+**Original symptom:** after running `speckle-update`, the external proxy started returning
+502 for speckle.rebus.industries. `docker ps` showed all 8 containers running, but
+`ss -ltn` showed nothing listening on 80/443/3000/9000/9001.
+
+**Root cause:** `/usr/local/bin/speckle-update` invoked
+`sudo docker compose -f /opt/speckle/docker-compose.yml up -d`. Passing `-f` explicitly
+suppressed Compose's auto-merge of `docker-compose.override.yml`, which is the file
+that publishes the host port bindings.
+
+**Fix:** the two compose invocations in `do_update()` now use
+`--project-directory /opt/speckle` (no explicit `-f`), so Compose auto-discovers and
+merges both files.
+
+```bash
+sudo docker compose --project-directory /opt/speckle pull
+sudo docker compose --project-directory /opt/speckle up -d
+```
+
+The original script is preserved at `/usr/local/bin/speckle-update.bak.20260427` if
+anything ever needs to be reverted or compared.
+
+## If Speckle Is Not Running After a Reboot — Troubleshooting
+
+### Step 1: Check containers
+```bash
+docker ps
+```
+If all 8 containers are listed as Up, Speckle is running. Check https://speckle.rebus.industries.
+
+### Step 2: Check Docker socket
+```bash
+ls -la /var/run/docker.sock
+sudo systemctl status docker
+```
+If the socket is missing: `sudo systemctl restart docker`
+
+### Step 3: Start containers if not running
+```bash
+cd /opt/speckle && docker compose up -d
+```
+Wait ~30 seconds then check https://speckle.rebus.industries.
+
+### Verify
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+curl -s http://localhost:80 -o /dev/null -w "HTTP: %{http_code}\n"
+```
+Expected: 8 containers Up, HTTP returns 200 or 302.
+
+## Key Decisions / Notes
+- The official `speckle/speckle-docker-compose-ingress` image has a bug (pcre_jit nginx
+  directive in wrong context) — originally replaced with Caddy on this host; now Caddy
+  also removed, services exposed directly with external proxy handling routing.
+- speckle-server crashes on startup if SMTP is unreachable — smtp.gmail.com with App
+  Password is more reliable than smtp-relay.gmail.com which has transient 421 rate limiting.
+- Admin user: dom@rebus.industries (email manually verified in DB on original EC2 setup;
+  preserved through pg_dumpall migration).
+- The `latest` Docker Hub tag for Speckle points to alpha/pre-release builds — do NOT
+  use it. The `speckle-update` command checks that all 5 service images exist for a given
+  X.Y.Z stable version before updating. GitHub releases are published before Docker images
+  are ready, so the script uses Docker Hub as the source of truth, not GitHub.
+- X-Frame-Options and Content-Security-Policy headers blocking iframe embedding are set
+  by the Speckle app itself — the external reverse proxy should strip/replace them if
+  iframe embedding is needed. **Currently the proxy Caddyfile on RB-DA2-Proxy1/2 does
+  NOT include these header rewrites** (see "External Reverse Proxy Requirements" below).
+  The original on-host `Caddyfile` snapshot in this directory shows the rules that were
+  used pre-migration.
+- Data is stored as bind mounts in `/opt/speckle/` (not Docker volumes), making backup
+  and migration straightforward.
+
+## External Reverse Proxy Requirements
+The external proxy (Caddy on RB-DA2-Proxy1/2 LXCs) replicates the routing logic that
+Caddy on this host previously handled.
+
+### Path-based routing (current Proxy1 Caddyfile)
+- `/graphql /api/* /auth/* /objects/* /preview/* /static/*` → `10.0.200.11:3000` (speckle-server)
+- Everything else → `10.0.200.11:80` (speckle-frontend-2)
+
+> The Proxy1 Caddyfile currently routes by path but does **not** include `/explorer` in
+> the backend matcher — the historical on-host Caddyfile did. If the GraphQL Explorer
+> stops working, add `/explorer` to the path matcher.
+>
+> Likewise the proxy does **not** currently expose `:9000` (MinIO S3) or `:9001` (console)
+> publicly via the proxy. Direct LAN access only.
+
+### Request body size limits (configured in old on-host Caddyfile, NOT in current proxy)
+- Backend routes: 1000MB max
+- Frontend routes: 100MB max
+
+If large file uploads start failing with 413, this is why — the new proxy needs the
+`request_body { max_size 1000MB }` directive added to the speckle.rebus.industries block.
+
+### Headers (if iframe embedding is needed)
+Strip `X-Frame-Options` and `Content-Security-Policy` from responses, replace with:
+`Content-Security-Policy: frame-ancestors *`
+
+Currently NOT applied at the new proxy. Add `header_down` directives to the
+speckle.rebus.industries block in Proxy1/Proxy2 Caddyfiles if iframe embedding breaks.
+
+## TODO
+- [x] Patch `/usr/local/bin/speckle-update`. (Done 2026-04-27.)
+- [x] Decide on HA + ACME approach for the proxy pair. (Done 2026-04-27 — cert rsync from Proxy1 to Proxy2 every 6h via systemd timer. See `D:\Documents\Claude\REBUS System\README.md`.)
+- [ ] Run `speckle-backup setup` to configure automated backup schedule.
+- [ ] Copy backups off-server for disaster recovery.
+- [ ] Change MinIO default credentials (`minioadmin` / `minioadmin`).
+- [ ] Re-add `/explorer` path matcher and request_body size limits 

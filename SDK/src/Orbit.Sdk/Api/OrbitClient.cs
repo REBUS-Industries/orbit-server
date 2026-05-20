@@ -57,8 +57,9 @@ public class OrbitClient
     public Task<OrbitVersion> CreateVersionAsync(
         string projectId, string modelId, string objectId,
         string? message = null, string sourceApplication = "OrbitRhino",
+        int totalChildrenCount = 0,
         CancellationToken ct = default) =>
         _gql.MutateAsync<OrbitVersion>(OrbitQueries.CreateVersion,
-            "modelMutations.create", ct,
-            new { input = new { projectId, modelId, objectId, message, sourceApplication } });
+            "versionMutations.create", ct,
+            new { input = new { projectId, modelId, objectId, message, sourceApplication, totalChildrenCount } });
 }

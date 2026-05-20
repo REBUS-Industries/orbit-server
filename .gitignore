@@ -18,3 +18,7 @@ Thumbs.db
 
 # Backups
 Server/backups/
+
+# Local temp
+.tmp/
+

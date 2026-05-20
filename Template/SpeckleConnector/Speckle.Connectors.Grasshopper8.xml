@@ -1,0 +1,1960 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Speckle.Connectors.Grasshopper8</name>
+    </assembly>
+    <members>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.GooEqualityComparer">
+            <summary>
+            <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation for <see cref="T:Grasshopper.Kernel.Types.IGH_Goo"/> references.
+            </summary>
+            <remarks>
+            Support most of the Grasshopper built-in types, but some types are not comparable, see code below.
+            </remarks>
+        </member>
+        <member name="F:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.ValueSet`1.DEFAULT_CULLING">
+            <summary>
+            Culling nulls by default to make it work as a <see cref="T:System.Windows.Forms.CheckBox"/>.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.ValueSet`1.AutoSelectAllItems">
+            <summary>
+            When enabled, all available items will be selected automatically and persistently.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.ValueSet`1.SelectAllItems">
+            <summary>
+            Helper method that reduces code duplication to select all items
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.ValueSet`1.Menu_AlwaysSelectAllClicked(System.Object,System.EventArgs)">
+            <summary>
+            Event handler for auto-select all items menu item
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.VariableParameterComponentBase">
+            <summary>
+            Base class for variable parameter components with name inheritance support
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.BaseComponents.VariableParameterComponentBase.OnParameterObjectChanged(Grasshopper.Kernel.IGH_DocumentObject,Grasshopper.Kernel.GH_ObjectChangedEventArgs)">
+            <summary>
+            Handles parameter object changes, including name changes that require resizing
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName">
+            <summary>
+            Creates collections by matching name tree structure to elements tree structure.
+            Each branch in the names tree corresponds to the same-path branch in the elements tree.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName.TreeStructuresMatch(Grasshopper.Kernel.Data.IGH_Structure,Grasshopper.Kernel.Data.IGH_Structure)">
+            <summary>
+            Validates that two tree structures have exactly matching paths
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName.GetCollectionName(System.Object)">
+            <summary>
+            Extracts collection name, handling GH_String and other text types
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName.GetOrCreateNestedCollection(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper,System.String[],System.Collections.IList,Grasshopper.Kernel.Data.GH_Path)">
+            <summary>
+            Gets or creates a nested collection structure based on the collection names.
+            </summary>
+            <remarks>
+            Handles paths like "parent::child::grandchild" by creating intermediate collections.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName.AddElementsToCollection(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper,System.Collections.IList,Grasshopper.Kernel.Data.GH_Path)">
+            <summary>
+            Adds elements from a branch to the target collection
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionsByName.GetBranchTopology(Grasshopper.Kernel.Data.GH_Path,System.Int32)">
+            <summary>
+            Creates topology string for a single branch (following GrasshopperHelpers.GetParamTopology pattern)
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Collections.CreateCollection">
+            <summary>
+            Simplified CreateCollection component using the base class pattern
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionHelpers">
+            <summary>
+            Shared helper methods for collection components to avoid code duplication
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionHelpers.CreateRootCollection(System.String)">
+            <summary>
+            Creates a root collection wrapper with default values
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionHelpers.HasDuplicateApplicationIds(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper)">
+            <summary>
+            Validates that all application IDs are unique across the entire collection hierarchy.
+            </summary>
+            <returns>True if duplicates exist, false if all IDs are unique</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionHelpers.ProcessAndCheckForDuplicateApplicationIds(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper,System.Collections.Generic.HashSet{System.String},System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            Recursively collects application IDs from all wrappers in the collection hierarchy.
+            </summary>
+            <remarks>
+            Only checks the wrapper's ApplicationId, not for example geometries within DataObjects.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Collections.CollectionHelpers.HasAnyValidContent(Speckle.Connectors.GrasshopperShared.Parameters.ISpeckleCollectionObject)">
+            <summary>
+            Recursively checks if collection or any descendants contain valid geometry/data objects
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Objects.ExpandSpeckleProperties.CreateOutputs(System.Collections.Generic.List{Speckle.Connectors.GrasshopperShared.Components.Objects.OutputParamWrapper})">
+            <summary>
+            Creates output parameters based on discovered properties.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Objects.ExpandSpeckleProperties.OutputMismatch(System.Collections.Generic.List{Speckle.Connectors.GrasshopperShared.Components.Objects.OutputParamWrapper})">
+            <summary>
+            Determines if the current output parameter structure differs from the required structure.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Objects.SpecklePropertiesPassthrough">
+            <summary>
+            CreateSpeckleProperties passthrough component by key value pairs
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Objects.QuerySpeckleObjects">
+            <summary>
+            Given a collection, this component will output the objects in the collection that satisfy the input parameters
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Objects.FilterSpeckleObjects">
+            <summary>
+            Given a list of objects, this component will filter the list for objects that match the queries.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Objects.FilterSpeckleObjects.MatchesAllFilters(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper,System.String,System.String,System.String,System.String,System.String,System.Boolean,System.String,System.Boolean)">
+            <summary>
+            Determines if a wrapper matches all active filter criteria.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Objects.FilterSpeckleObjects.FindInputIndexByName(System.String)">
+            <summary>
+            Finds the index of an input parameter by its Name.
+            Returns null if the parameter doesn't exist.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Objects.FilterSpeckleObjects.CreateParameter(Grasshopper.Kernel.GH_ParameterSide,System.Int32)">
+            <remarks>
+            The ternary operator for NickName is needed due to a Grasshopper quirk where
+            dynamically created parameters don't respect the "Draw Full Names" setting automatically.
+            We check CanvasFullNames at creation time to set the appropriate NickName.
+            This does not handle the case where the user toggles "Draw Full Names" while the
+            component is already on the canvas. Handling that would require subscribing to
+            Grasshopper.CentralSettings.CanvasFullNamesChanged event, which is overkill for now.
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Objects.CreateSpeckleProperties">
+            <summary>
+            Simplified CreateSpeckleProperties component using the base class pattern
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.DiscoverAllFieldsFromInput">
+            <summary>
+            Discovers all unique field names and their access types from all input objects by looking at volatile data directly.
+            </summary>
+            <returns>A dictionary mapping field names to their required parameter access types.</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateOutputParamsFromFieldNames(System.Collections.Generic.IReadOnlyDictionary{System.String,Grasshopper.Kernel.GH_ParamAccess})">
+            <summary>
+            Creates output parameter wrappers from field names and their corresponding access types.
+            </summary>
+            <param name="fieldAccessTypes">Dictionary mapping field names to their required parameter access types.</param>
+            <returns>List of output parameter wrappers with correct access types.</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.DeconstructObject(System.Object)">
+            <summary>
+            Deconstructs a single object into its constituent fields/properties.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.ParsePropertyGroup(Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo)">
+            <summary>
+            Handles SpecklePropertyGroupGoo objects by extracting their key-value pairs.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.HandleUnsupportedType(System.Object)">
+            <summary>
+            Handles unsupported object types by logging an error and returning null.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.SetOutputData(Grasshopper.Kernel.IGH_DataAccess,System.Collections.Generic.List{Speckle.Connectors.GrasshopperShared.Components.Dev.OutputParamWrapper})">
+            <summary>
+            Sets output data for the current iteration, filling missing fields with null values.
+            Uses a lookup dictionary for efficient field matching.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateOutputParamForProperty(System.Collections.Generic.KeyValuePair{System.String,System.Object},Speckle.Sdk.Models.Base,System.Collections.Generic.List{Grasshopper.Kernel.Types.IGH_Goo},System.Collections.Generic.List{Grasshopper.Kernel.Types.IGH_Goo})">
+            <summary>
+            Creates an output parameter for a single property, handling different value types appropriately.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateListOutputParam(System.String,System.Collections.IList,Speckle.Sdk.Models.Base,System.Collections.Generic.List{Grasshopper.Kernel.Types.IGH_Goo},System.Collections.Generic.List{Grasshopper.Kernel.Types.IGH_Goo})">
+            <summary>
+            Creates an output parameter for list properties, with special handling for collection elements and display values.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateDictionaryOutputParam(System.String,System.Collections.Generic.Dictionary{System.String,System.Object})">
+            <summary>
+            Creates an output parameter for dictionary properties, converting them to SpecklePropertyGroupGoo.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.ConvertOrCreateWrapper(Speckle.Sdk.Models.Base)">
+            <summary>
+            Converts a Speckle Base object to host geometry or creates a wrapper if conversion fails.
+            Returns a list of SpeckleGeometryWrapperGoo objects.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateGeometryWrapper(System.ValueTuple{System.Object,Speckle.Sdk.Models.Base})">
+            <summary>
+            Creates a SpeckleGeometryWrapperGoo from a converted geometry and base object pair.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.CreateFallbackWrapper(Speckle.Sdk.Models.Base)">
+            <summary>
+            Creates a fallback wrapper for Base objects that cannot be converted to host geometry.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Dev.DeconstructSpeckleParam.OutputMismatch(System.Collections.Generic.List{Speckle.Connectors.GrasshopperShared.Components.Dev.OutputParamWrapper})">
+            <summary>
+            Determines if the current output parameter structure differs from the required structure.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.GrasshopperReceiveInfo">
+            <param name="Account"></param>
+            <param name="WorkspaceId"></param>
+            <param name="ProjectId"></param>
+            <param name="ProjectName"></param>
+            <param name="ModelId"></param>
+            <param name="ModelName"></param>
+            <param name="SelectedVersionId"></param>
+            <param name="SourceApplication">See <see cref="P:Speckle.Sdk.Api.GraphQL.Models.Version.sourceApplication"/></param>
+            <param name="ReceivingApplicationSlug">Slug of the application doing the receiving (i.e. the current host app)</param>
+            <param name="SelectedVersionUserId"></param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.GrasshopperReceiveInfo.#ctor(Speckle.Sdk.Credentials.Account,System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.String)">
+            <param name="Account"></param>
+            <param name="WorkspaceId"></param>
+            <param name="ProjectId"></param>
+            <param name="ProjectName"></param>
+            <param name="ModelId"></param>
+            <param name="ModelName"></param>
+            <param name="SelectedVersionId"></param>
+            <param name="SourceApplication">See <see cref="P:Speckle.Sdk.Api.GraphQL.Models.Version.sourceApplication"/></param>
+            <param name="ReceivingApplicationSlug">Slug of the application doing the receiving (i.e. the current host app)</param>
+            <param name="SelectedVersionUserId"></param>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.GrasshopperReceiveInfo.WorkspaceId">
+            <summary></summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.GrasshopperReceiveInfo.SourceApplication">
+            <summary>See <see cref="P:Speckle.Sdk.Api.GraphQL.Models.Version.sourceApplication"/></summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.GrasshopperReceiveInfo.SelectedVersionUserId">
+            <summary></summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Components.Operations.Receive.ReceiveComponentOutput.RootObject">
+            <remarks>
+            Made nullable as output can be null when Run = false or on error
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Operations.Send.IngestionTracker">
+            <summary>
+            Polls ingestion status via the SDK's GraphQL query API
+            and blocks until the ingestion reaches a terminal state (success/failed/cancelled).
+            </summary>
+            <remarks>
+            We use polling instead of subscriptions because GH components call WaitForIngestionCompletion
+            after SendViaPackfile returns — by that point the server may have already completed
+            the ingestion. Setting up a new WebSocket subscription is too slow to catch fast completions.
+            Polling with Ingestion.Get() is reliable regardless of timing.
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.ModelMenuHandler">
+            <summary>
+            Helper class to manage model filtering and selection for the components.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.ProjectMenuHandler">
+            <summary>
+            Helper class to manage project filtering and selection for the components.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard">
+            <summary>
+            Wizard to handle cascading selections in an order Workspace, Project, Model and Version for operations.
+            Wraps the UI components with it and exposes the state of the selection to consumer.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.#ctor(System.Func{System.Threading.Tasks.Task},System.Func{System.String,System.Threading.Tasks.Task},System.Boolean)">
+            <param name="refreshComponent"> Callback function to trigger when component need to refresh itself.</param>
+            <param name="isSender"> Whether it will be used in sender or receiver. Accordingly, the wizard will manage versions or not.</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchWorkspaces(System.String)">
+            <summary>
+            Callback function to retrieve workspaces with the search text
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchWorkspacesSync(System.String)">
+            <summary>
+            Callback function to retrieve workspaces with the search text sync
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchProjects(System.String)">
+            <summary>
+            Callback function to retrieve projects with the search text
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchProjectsSync(System.String)">
+            <summary>
+            Callback function to retrieve projects with the search text sync
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchModels(System.String)">
+            <summary>
+            Callback function to retrieve models with the search text
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchModelsSync(System.String)">
+            <summary>
+            Callback function to retrieve models with the search text sync
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchVersions(System.Int32)">
+            <summary>
+            Callback function to retrieve amount of versions
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.Wizard.SpeckleOperationWizard.FetchVersionsSync(System.Int32)">
+            <summary>
+            Callback function to retrieve amount of versions
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.Operations.SpeckleSelectModelComponent.RestoreAccountFromStoredState">
+            <summary>
+            Restores the account from stored state when the component is pasted or loaded from file.
+            </summary>
+            <remarks>
+            Attempts to restore account in two stages:
+            <list type="number">
+            <item>First tries to get account by stored user ID</item>
+            <item>If that fails and server url is available, falls back to getting any account matching the server</item>
+            </list>
+            Only executes when <see cref="F:Speckle.Connectors.GrasshopperShared.Components.Operations.SpeckleSelectModelComponent._justPastedIn"/> is true and <see cref="F:Speckle.Connectors.GrasshopperShared.Components.Operations.SpeckleSelectModelComponent._storedUserId"/> is not empty.
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Components.SpecklePassthroughComponentBase">
+            <summary>
+            Base class for passthrough components with "hidden" Application ID parameter.
+            </summary>
+            <remarks>
+            Users can click ⊕ to add an optional Application ID input and output.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.SpecklePassthroughComponentBase.TryGetApplicationIdInput(Grasshopper.Kernel.IGH_DataAccess,System.String@)">
+            <summary>
+            Reads the optional Application Id input. Returns true if user provided a valid value.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.SpecklePassthroughComponentBase.SetApplicationIdOutput(Grasshopper.Kernel.IGH_DataAccess,System.String)">
+            <summary>
+            Sets the Application Id output (if the parameter exists).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Components.SpecklePassthroughComponentBase.CreateParameter(Grasshopper.Kernel.GH_ParameterSide,System.Int32)">
+            <remarks>
+            The ternary for NickName handles a Grasshopper quirk where dynamically created parameters
+            don't respect the "Draw Full Names" setting automatically.
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.HostApp.Extras.DebounceDispatcher">
+             <summary>
+             Provides Debounce() and Throttle() methods.
+             Use these methods to ensure that events aren't handled too frequently.
+            
+             Throttle() ensures that events are throttled by the interval specified.
+             Only the last event in the interval sequence of events fires.
+            
+             Debounce() fires an event only after the specified interval has passed
+             in which no other pending event has fired. Only the last event in the
+             sequence is fired.
+             </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.Extras.DebounceDispatcher.Debounce(System.Int32,System.Action{System.Object},System.Object,System.Windows.Threading.DispatcherPriority,System.Windows.Threading.Dispatcher)">
+             <summary>
+             Debounce an event by resetting the event timeout every time the event is
+             fired. The behavior is that the Action passed is fired only after events
+             stop firing for the given timeout period.
+            
+             Use Debounce when you want events to fire only after events stop firing
+             after the given interval timeout period.
+            
+             Wrap the logic you would normally use in your event code into
+             the  Action you pass to this method to debounce the event.
+             Example: https://gist.github.com/RickStrahl/0519b678f3294e27891f4d4f0608519a
+             </summary>
+             <param name="interval">Timeout in Milliseconds</param>
+             <param name="action">Action<object> to fire when debounced event fires</object></param>
+             <param name="param">optional parameter</param>
+             <param name="priority">optional priorty for the dispatcher</param>
+             <param name="disp">optional dispatcher. If not passed or null CurrentDispatcher is used.</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.Extras.DebounceDispatcher.Throttle(System.Int32,System.Action{System.Object},System.Object,System.Windows.Threading.DispatcherPriority,System.Windows.Threading.Dispatcher)">
+             <summary>
+             This method throttles events by allowing only 1 event to fire for the given
+             timeout period. Only the last event fired is handled - all others are ignored.
+             Throttle will fire events every timeout ms even if additional events are pending.
+            
+             Use Throttle where you need to ensure that events fire at given intervals.
+             </summary>
+             <param name="interval">Timeout in Milliseconds</param>
+             <param name="action">Action<object> to fire when debounced event fires</object></param>
+             <param name="param">optional parameter</param>
+             <param name="priority">optional priorty for the dispatcher</param>
+             <param name="disp">optional dispatcher. If not passed or null CurrentDispatcher is used.</param>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.HostApp.KeyWatcher">
+            <summary>
+            Simple utility to track Tab key state for name inheritance during parameter connections
+            </summary>
+            <remarks>
+            Taken from legacy (v2) code
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.KeyWatcher.Initialize">
+            <summary>
+            Initialize the key watcher by hooking into Grasshopper canvas events
+            Call this once during component initialization
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.GetSpeckleApplicationId(System.Drawing.Color)">
+            <summary>
+            Retrieves a unique Speckle application id from the rgb value.
+            </summary>
+            <remarks> Uses the rgb value since color names are not unique </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.GetSpeckleApplicationId(Rhino.Display.DisplayMaterial)">
+            <summary>
+            Creates a unique Speckle application id from the display material properties.
+            </summary>
+            <param name="mat"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.GetSpeckleApplicationId(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper)">
+            <summary>
+            Retrieves a unique Speckle application id from the path of the collection
+            </summary>
+            <param name="collectionWrapper"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.GetAtomicObjects(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper,System.Boolean)">
+            <summary>
+            Gets all of the atomic objects inside a collection wrapper.
+            </summary>
+            <param name="coll"></param>
+            <param name="recurse">Will recurse into sub collections to get atomic objects</param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.ToSpeckleGeometryWrapper(Grasshopper.Kernel.Types.IGH_Goo)">
+            <summary>
+            Attempts to cast an IGH_Goo to a Speckle Geometry Wrapper
+            </summary>
+            <param name="goo"></param>
+            <returns>A reference to the Speckle Geometry Wrapper from the goo, if any</returns>
+            <remarks>This method **does not** deep copy the return value</remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.ToSpeckleObjectWrapper(Grasshopper.Kernel.Types.IGH_Goo)">
+            <summary>
+            Attempts to cast an IGH_Goo to a Speckle Geometry or DataObject Wrapper
+            </summary>
+            <param name="goo"></param>
+            <returns>A reference to the Speckle Wrapper from the goo, if any</returns>
+            <remarks>This method **does not** deep copy the return value</remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.ToGeometryBase(Grasshopper.Kernel.Types.IGH_GeometricGoo)">
+            <summary>
+            Attempts to cast the goo to a geometry base object.
+            </summary>
+            <param name="geoGoo"></param>
+            <returns></returns>
+            <exception cref="T:Speckle.Sdk.SpeckleException">If it fails to cast</exception>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.CreateDataTreeFromTopologyAndItems(System.String,System.Collections.IList)">
+            <summary>
+            Creates a tree based of a string that encodes the grasshopper topology.
+            </summary>
+            <param name="topology"></param>
+            <param name="subset"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.GetParamTopology(Grasshopper.Kernel.IGH_Param)">
+            <summary>
+            Encodes a tree topology into an exhaustive string which can be used to recreate it using
+            <see cref="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.CreateDataTreeFromTopologyAndItems(System.String,System.Collections.IList)"/>.
+            </summary>
+            <param name="param"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.GrasshopperHelpers.ToGooListWithNulls(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper)">
+            <summary>
+            Converts Elements to Goo list, converting nulls to GH_ObjectWrapper(null) for topology preservation (CNX-2855)
+            </summary>
+        </member>
+        <member name="F:Speckle.Connectors.GrasshopperShared.HostApp.SpeckleResourceBuilder.s_fe2UrlRegex">
+            <summary>
+            The ReGex pattern to determine if a URL's AbsolutePath is a Frontend2 URL or not.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.HostApp.SpeckleConversionContext">
+            <summary>
+            Handles grasshopper wide converters. We don't need new converters, unless the document changes - this class should handle this (untested).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.HostApp.SpeckleConversionContext.#ctor(Speckle.Converters.Common.IRootToSpeckleConverter,Speckle.Converters.Common.IRootToHostConverter)">
+            <summary>
+            Handles grasshopper wide converters. We don't need new converters, unless the document changes - this class should handle this (untested).
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker">
+            <summary>
+            Reconstructs block instances and definitions from received proxies back into Grasshopper wrapper objects.
+            Tracks and returns object IDs consumed by block definitions to prevent duplication in collection hierarchy.
+            </summary>
+            <remarks>
+            Geometry objects that define blocks must already be converted and present in convertedObjectsMap at this stage.
+            Follows Rhino's pattern where objects consumed by block definitions should not appear as standalone objects.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.UnpackBlocks(System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.GraphTraversal.TraversalContext},System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.Instances.InstanceDefinitionProxy},System.Collections.Generic.Dictionary{System.String,Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper},Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperCollectionRebuilder)">
+            <summary>
+            Creates block definitions and instances from receive pipeline, returning consumed object IDs.
+            </summary>
+            <returns>Set of object IDs that have been consumed by block definitions and should not appear standalone</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.ExtractAndSortBlocks(System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.GraphTraversal.TraversalContext},System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.Instances.InstanceDefinitionProxy})">
+            <summary>
+            Extracts blocks from TraversalContext and adds metadata definitions, then sorts by depth.
+            Deepest definitions first, then instances, to handle nested hierarchies correctly.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.CreateBlocksInDependencyOrder(System.Collections.Generic.List{System.ValueTuple{Speckle.Sdk.Models.Collections.Collection[],Speckle.Sdk.Models.Instances.IInstanceComponent}},System.Collections.Generic.Dictionary{System.String,Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper},Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperCollectionRebuilder,System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            Creates definitions and instances in dependency order, populating convertedObjectsMap
+            with instances as they're created (following Rhino's applicationIdMap pattern).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.CreateBlockDefinitionWrapper(Speckle.Sdk.Models.Instances.InstanceDefinitionProxy,System.String,System.Collections.Generic.Dictionary{System.String,Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper},System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            Creates a <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper"/> from its proxy using pre-converted defining objects.
+            Tracks consumed object IDs to prevent duplication in collection hierarchy.
+            </summary>
+            <remarks>
+            Objects used in block definitions are considered "consumed" and should not appear as standalone objects,
+            matching Rhino's behavior where doc.Objects.Delete() removes consumed objects after block creation.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.CreateBlockInstanceWrapper(Speckle.Sdk.Models.Instances.InstanceProxy,System.String,System.Collections.Generic.Dictionary{System.String,Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper},Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperColorUnpacker,Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperMaterialUnpacker)">
+            <summary>
+            Creates a <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper"/> from its proxy using.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperBlockUnpacker.AddInstanceToCollection(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper,Speckle.Sdk.Models.Collections.Collection[],Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperCollectionRebuilder)">
+            <summary>
+            Adds an instance to the collection and sets up hierarchy relationships.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperMaterialUnpacker.ParseMaterials(System.Collections.Generic.IReadOnlyCollection{Speckle.Objects.Other.RenderMaterialProxy})">
+            <summary>
+            Parse Render Material Proxies and stores in Cache the relationship between object ids and materials
+            </summary>
+            <param name="materialProxies"></param>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler">
+            <summary>
+            Handles conversion of atomic objects from TraversalContexts into Grasshopper wrapper objects.
+            </summary>
+            <remarks>
+            Follows Rhino's approach: atomic objects are converted directly without pre-transformation,
+            with instance transformations handled separately during block reconstruction. Implements consumedObjectIds
+            tracking to prevent objects consumed by block definitions from appearing as standalone objects.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.Initialize(Speckle.Connectors.Common.Operations.Receive.TraversalContextUnpacker,Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperColorUnpacker,Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperMaterialUnpacker,Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperCollectionRebuilder,System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.Instances.InstanceDefinitionProxy})">
+            <summary>
+            Initializes the handler with per-operation data.
+            Must be called before using ConvertAtomicObjects or ConvertBlockInstances.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ConvertAtomicObjects(System.Collections.Generic.IEnumerable{Speckle.Sdk.Models.GraphTraversal.TraversalContext})">
+            <summary>
+            Converts all atomic objects in two passes:
+            Pass 1 - Convert normal objects and populate ConvertedObjectsMap
+            Pass 2 - Resolve registered DataObjects with InstanceProxies using the populated map
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ConvertObjectToCache(Speckle.Sdk.Models.GraphTraversal.TraversalContext)">
+            <summary>
+            Converts and caches an atomic object for later lookup.
+            Skips registered DataObjects (displayValue is InstanceProxy) - they are resolved in ResolveDataObjectInstanceProxies.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ResolveDataObjectInstanceProxies(Speckle.Sdk.Models.GraphTraversal.TraversalContext)">
+            <summary>
+            Resolves a registered DataObject by transforming its InstanceProxy definition objects.
+            Requires definition objects to exist in ConvertedObjectsMap (populated by ConvertObjectToCache).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ConvertBlockInstances(System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.GraphTraversal.TraversalContext})">
+            <summary>
+            Converts block instances and definitions from traversal contexts into Grasshopper wrapper objects.
+            Automatically filters out InstanceProxies belonging to registered DataObjects.
+            Automatically handles cleanup of consumed objects from the collection hierarchy.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.CreateDataObjectWrapper(Speckle.Objects.Data.DataObject,System.Collections.Generic.List{Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper},System.Collections.Generic.List{Speckle.Sdk.Models.Collections.Collection},Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper)">
+            <summary>
+            Creates a DataObjectWrapper from a DataObject and its geometries.
+            Handles color/material inheritance and property extraction.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ResolveInstanceProxiesToGeometries(System.Collections.Generic.List{Speckle.Sdk.Models.Instances.InstanceProxy})">
+            <summary>
+            Resolves InstanceProxy displayValues to transformed geometries.
+            Returns the list of resolved geometries that can be used as DataObject displayValue replacements.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.LocalToGlobalMapHandler.ConvertToGeometryWrappers(System.Collections.Generic.List{System.ValueTuple{System.Object,Speckle.Sdk.Models.Base}})">
+            <summary>
+            Converts the raw converted objects to SpeckleGeometryWrappers for DataObject display values.
+            Does NOT apply DataObject-level colors/materials - that's handled by CreateDataObjectWrapper.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperColorUnpacker.ParseColors(System.Collections.Generic.IReadOnlyCollection{Speckle.Sdk.Models.Proxies.ColorProxy})">
+            <summary>
+            Parse Color Proxies and stores in ObjectColorsIdMap the relationship between object ids and colors
+            </summary>
+            <param name="colorProxies"></param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Receive.GrasshopperCollectionRebuilder.RemoveConsumedObjects(System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            Removes consumed objects from the collection hierarchy.
+            Matches Rhino's pattern: createdObjectIds.RemoveWhere(id => consumedObjectIds.Contains(id))
+            </summary>
+            <param name="consumedObjectIds">Set of object IDs that have been consumed by block definitions</param>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperBlockPacker">
+            <summary>
+            Processes block instances and their nested definitions for publish.
+            Handles nested definitions and depth tracking (injected InstanceObjectsManager).
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperBlockPacker.InstanceDefinitionProxies">
+            <summary>
+            Stores a map of instance definition id to instance definition proxy
+            </summary>
+            <remarks>
+            Storing <see cref="T:Speckle.Sdk.Models.Instances.InstanceDefinitionProxy"/> directly and not the wrapper (matching Rhino).
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperBlockPacker.ProcessInstance(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper,System.Int32)">
+            <summary>
+            Processes a <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper"/> by tracking it in InstanceObjectsManager and recursively
+            processing its definition. Handles depth calculation for nested block hierarchies.
+            </summary>
+            <param name="blockInstance">The block instance to process</param>
+            <param name="depth">Current nesting depth (0 = top level, increases for nested instances)</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperBlockPacker.ProcessDefinition(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper,System.Int32)">
+            <summary>
+            Processes a block definition, adding it and its objects to InstanceObjectsManager.
+            Updates maxDepth for existing definitions when encountered at greater depths.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperMaterialPacker.ProcessMaterial(System.String,Speckle.Connectors.GrasshopperShared.Parameters.SpeckleMaterialWrapper)">
+            <summary>
+            Processes an object or collections's render material and adds the id to a render material proxy in <see cref="P:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperMaterialPacker.RenderMaterialProxies"/>
+            </summary>
+            <param name="objId"></param>
+            <param name="material"></param>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperContinuousTraversalBuilder">
+            <summary>
+            Continuous traversal builder for Grasshopper that processes each object through the <see cref="T:Speckle.Sdk.Pipelines.Send.SendPipeline"/>
+            as it unwraps. This enables the packfile send path (streaming objects to S3 during build).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperContinuousTraversalBuilder.#ctor(Speckle.Connectors.Common.Instances.IInstanceObjectsManager{Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper,System.Collections.Generic.List{System.String}})">
+            <summary>
+            Continuous traversal builder for Grasshopper that processes each object through the <see cref="T:Speckle.Sdk.Pipelines.Send.SendPipeline"/>
+            as it unwraps. This enables the packfile send path (streaming objects to S3 during build).
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperColorPacker.ProcessColor(System.String,System.Nullable{System.Drawing.Color})">
+            <summary>
+            Processes an object or collections's color and adds the id to a color proxy in <see cref="P:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperColorPacker.ColorProxies"/>
+            </summary>
+            <param name="objId"></param>
+            <param name="color"></param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperRootObjectBuilder.UnwrapGeometry(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper)">
+            <summary>
+            Converts a <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper"/> to underlying Base object with dynamically attached properties.
+            </summary>
+            <remarks>
+            POC: if we move properties assignment to auto set the wrapped base, we can get rid of this entirely!
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperRootObjectBuilder.ProcessBlockInstanceDefinition(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper,Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperColorPacker,Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperMaterialPacker,Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperBlockPacker,Speckle.Sdk.Models.Collections.Collection)">
+            <summary>
+            Processes a block instance's definition and adds the defining objects to the current collection.
+            Handles nested block hierarchies and depth calculation via GrasshopperBlockPacker.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperRootObjectBuilder.UnwrapDataObject(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper,Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperColorPacker,Speckle.Connectors.GrasshopperShared.Operations.Send.GrasshopperMaterialPacker)">
+            <summary>
+            Converts a <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper"/> to underlying DataObject with properly configured displayValue.
+            Processes colors and materials for each individual geometry during conversion.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleOutputParam">
+            <summary>
+            Simple extension of Param_GenericObject that adds "Extract parameter" functionality.
+            Follows the existing v3 codebase patterns.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleOutputParam.Menu_ExtractOutputParameterClicked(System.Object,System.EventArgs)">
+            <summary>
+            Extract parameter implementation - taken from v2 legacy and simplified for v3.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapperGoo.#ctor">
+            <summary>
+            Creates a default Instance Goo with default values. Only use this for casting.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapperGoo">
+            <summary>
+            The goo of <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper"/>.
+            </summary>
+            <remarks>Casting </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapperGoo.DeepCopy">
+            <summary>
+            Creates a deep copy of this block definition wrapper for proper data handling.
+            Follows the same pattern as other Goo implementations in the codebase.
+            </summary>
+            <returns>A new instance with copied data</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapperGoo.TryConvertDefinition(System.Collections.Generic.IEnumerable{System.Object},System.String,System.String)">
+            <summary>
+            Attempts to convert block definition objects to SpeckleGeometryWrappers.
+            Returns false if all objects are unsupported, true if at least one converts.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper.#ctor(Rhino.Geometry.Transform)">
+            <summary>
+            A default constructor for speckle block instances, with default values
+            </summary>
+            <param name="transform">This should be the identity transform, and will be set as identity regardless of value passed in.</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockInstanceWrapper.GetTransformedObjectsForDisplay">
+            <summary>
+            Gets or builds a cached list of transformed objects for displaying.
+            Only rebuilds the cache when the transform changes, dramatically improving performance.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper">
+            <summary>
+            Wrapper around a block definition and its converted Speckle equivalent.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper.DrawPreview(Grasshopper.Kernel.IGH_PreviewArgs,System.Boolean)">
+            <summary>
+            Creates a preview of the block definition by displaying all contained objects
+            </summary>
+            <remarks>
+            Leveraging already defined preview logic for the objects which make up this block. Refer to <see cref="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.DrawPreview(Grasshopper.Kernel.IGH_PreviewArgs,System.Boolean)"/>.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper.Bake(Rhino.RhinoDoc,System.Collections.Generic.List{System.Guid},System.String)">
+            <summary>
+            Bakes this block definition to Rhino, automatically handing nested block dependencies.
+            Nested definitions are baked first, to ensure that InstanceReferenceGeometry can find them
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper.BakeNestedDefinitions(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper,Rhino.RhinoDoc,System.Collections.Generic.List{System.Guid},System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            Recursively bakes nested block definitions in dependency order.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleBlockDefinitionWrapper.BakeCurrentDefinition(Rhino.RhinoDoc,System.Collections.Generic.List{System.Guid},System.String)">
+            <summary>
+            Creates the Rhino InstanceDefinition, converting nested instances to InstanceReferenceGeometry.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleVariableParam">
+            <summary>
+            Simplified parameter with name inheritance support
+            Focuses on core functionality: Tab key inheritance and AlwaysInheritNames
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo">
+            <summary>
+            Rhino 8+ ModelObject casting support for SpeckleDataObjectWrapperGoo.
+            </summary>
+            <summary>
+            Goo wrapper for SpeckleDataObjectWrapper.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.CastFromModelObject(System.Object)">
+            <summary>
+            Handles casting from Rhino 8+ ModelObjects to DataObject.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.CastToModelObject``1(``0@)">
+            <summary>
+            Handles casting from DataObject to Rhino 8+ ModelObjects.
+            </summary>
+            <remarks>
+            Only works if DataObject has exactly one geometry
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.#ctor(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper)">
+            <summary>
+            Creates goo with a DataObject wrapper.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.#ctor">
+            <summary>Parameterless constructor</summary>
+            <remarks>Should only be used for casting!</remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.CastFrom(System.Object)">
+            <summary>
+            Handles casting from other types to DataObject wrapper.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.CastTo``1(``0@)">
+            <summary>
+            Handles casting to other types from DataObject wrapper.
+            </summary>
+            <remarks>
+            Only allows geometry casting when DataObject has exactly one geometry.
+            </remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.DrawViewportMeshes(Grasshopper.Kernel.GH_PreviewMeshArgs)">
+            <summary>
+            Draws viewport meshes/surfaces for the data object.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.ClippingBox">
+            <summary>
+            Calculates the bounding box for all geometries in this data object.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapperGoo.CastFromSpeckleGeometryWrapper(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper)">
+            <summary>
+            Creates a single-element DataObject from <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper"/> (one geometry → one display value).
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper">
+            <summary>
+            Wrapper around a geometry base object and its converted speckle equivalent.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.GeometryBase">
+            <summary>
+            The GeometryBase corresponding to the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>
+            </summary>
+            <remarks>
+            POC: how will we send intervals and other gh native objects? do we? maybe not for now?
+            Objects using fallback conversion (eg DataObjects) will create one wrapper per geometry in the display value.
+            </remarks>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.Properties">
+            <summary>
+            Properties that stay synchronized with Base["properties"]
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.Color">
+            <summary>
+            The color of the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.Material">
+            <summary>
+            The material of the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapperGoo.#ctor">
+            <summary>Parameterless constructor</summary>
+            <remarks>Should only be used for casting!</remarks>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapperGoo.CastFrom(System.Object)">
+            <summary>
+            Casts from Speckle objects, geometry base, and model objects.
+            All non-Speckle objects will be converted to its geometry equivalent.
+            </summary>
+            <param name="source"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapperGoo.CastFromDataObject(Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper)">
+            <summary>
+            Handles casting from DataObject to SpeckleGeometryWrapper.
+            Only works if DataObject has exactly one geometry.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapperParam.BakeGeometry(Rhino.RhinoDoc,Rhino.DocObjects.ObjectAttributes,System.Collections.Generic.List{System.Guid})">
+            <summary>
+            Bakes the object
+            </summary>
+            <param name="doc"></param>
+            <param name="att"></param>
+            <param name="objIds"></param>
+            <remarks>
+            The attributes come from the user dialog after calling bake.
+            The selected layer from the dialog will only be user if no path is already present on the object.
+            </remarks>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper">
+            <summary>
+            Wrapper around a data object and its converted speckle equivalent.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Name">
+            <summary>
+            Name on the wrapper and wrapped Base (DataObject) are kept in sync here.
+            DataObject.name is the single source of truth - all geometry names inherit from it.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.DataObject">
+            <summary>
+            The wrapped DataObject.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Base">
+            <summary>
+            Validated gateway to the typed property (validates and delegates to DataObject).
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Geometries">
+            <summary>
+            Contains a list of <see cref="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleGeometryWrapper"/>.
+            </summary>
+            <remarks>
+            A list of the wrappers as opposed to the geometry bases allows us to hold on to the color and material information.
+            However, this does make syncing of name, props etc. more challenging.
+            </remarks>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Path">
+            <summary>
+            The list of collection names that forms the full path to this object.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Parent">
+            <summary>
+            Reference to the parent collection wrapper.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Properties">
+            <summary>
+            Try to keep DataObject.properties as source of truth.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.DrawPreview(Grasshopper.Kernel.IGH_PreviewArgs,System.Boolean)">
+            <summary>
+            Draws preview for all geometries contained in this data object.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.DrawPreviewRaw(Rhino.Display.DisplayPipeline,Rhino.Display.DisplayMaterial)">
+            <summary>
+            Draws raw preview for all geometries using a specific material.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.Bake(Rhino.RhinoDoc,System.Collections.Generic.List{System.Guid},System.Int32,System.Boolean,System.String)">
+            <summary>
+            Bakes the DataObject as a Rhino group containing all the display geometries.
+            </summary>
+            <param name="doc">Rhino doc to bake into</param>
+            <param name="objIds">Collection to store created objects GUIDs</param>
+            <param name="bakeLayerIndex">Layer index to bake geometries to (-1 for automatic)</param>
+            <param name="layersAlreadyCreated">Indicates whether layers have already been created or not</param>
+            <param name="baseLayerName">Base layer name for group naming</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.DeepCopy">
+            <summary>
+            Creates a deep copy of this wrapper.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.SyncGeometryNames">
+            <summary>
+            Syncs geometry names to match the DataObject name.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.SyncGeometryProperties(Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo)">
+            <summary>
+            Syncs geometry properties to match the DataObject properties.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.SyncGeometryPath">
+            <summary>
+            Syncs geometry paths.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.SyncGeometryParent">
+            <summary>
+            Syncs geometry parents.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectWrapper.CreateGroupName(System.String)">
+            <summary>
+            Creates a descriptive group name
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectParam.DrawViewportWires(Grasshopper.Kernel.IGH_PreviewArgs)">
+            <summary>
+            Draws viewport wires for all data objects in this parameter.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectParam.DrawViewportMeshes(Grasshopper.Kernel.IGH_PreviewArgs)">
+            <summary>
+            Draws viewport meshes for all data objects in this parameter.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleDataObjectParam.ClippingBox">
+            <summary>
+            Calculates the clipping box for all data objects in this parameter.
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleMaterialWrapperGoo">
+            <summary>
+            The Speckle Property Group Goo is a flat dictionary of (speckle property path, speckle property).
+            The speckle property path is the concatenated string of all original flattened keys with the property delimiter
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleMaterialWrapperGoo.#ctor">
+            <summary>
+            Empty constructor should only be used for casting
+            </summary>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper">
+            <summary>
+            A wrapper class for Speckle <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Name">
+            <summary>
+            The name of the object. When set, this will also update the "name" property of <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>.
+            </summary>
+            <remarks>
+            Made virtual to allow DataObject to override with custom sync logic.
+            </remarks>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base">
+            <summary>
+            The wrapped <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.ApplicationId">
+            <summary>
+            Represents the <see cref="P:Speckle.Sdk.Models.Base.applicationId"/>. When set, this will also update the applicationId of <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.CreateGoo">
+            <summary>
+            Creates an <see cref="T:Grasshopper.Kernel.Types.IGH_Goo"/> from this wrapper
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleMaterialWrapper">
+            <summary>
+            Wrapper around a render material base object and its converted speckle equivalent.
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleMaterialWrapper.Bake(Rhino.RhinoDoc,System.String)">
+            <summary>
+            Creates the material in the document
+            </summary>
+            <param name="doc"></param>
+            <param name="name">The name override, if any. Used for param baking where the nickname is changed by the user, or no name is available.</param>
+            <returns>The index of the created material in the material table</returns>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper">
+            <summary>
+            A Wrapper class representing a Speckle Collection to Rhino Layer relationship.
+            </summary>
+            <remarks>
+            When constructing, the following properties need to be set in order:
+            <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Base"/>, then <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Name"/> and <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.ApplicationId"/>
+            This is because changing the Name or ApplicationId will update Collection.
+            </remarks>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Path">
+            <summary>
+            List of Collection names that build up the path to this collection (inclusive of <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleWrapper.Name"/>;
+            </summary>
+            <remarks>Setting this property will update all element paths inside <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Elements"/></remarks>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Topology">
+            <summary>
+            The Grasshopper Topology of this collection. This setter also sets the "topology" prop dynamically on <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Collection"/>
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Color">
+            <summary>
+            The color of the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Material">
+            <summary>
+            The material of the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Base"/>
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.GetLayerIndex">
+            <summary>
+            Will attempt to retrieve an existing Layer from the <see cref="P:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Path"/>.
+            </summary>
+            <returns>Index of existing layer if found, or -1 if not.</returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpeckleCollectionWrapper.Bake(Rhino.RhinoDoc,System.Collections.Generic.List{System.Guid},System.Boolean,System.Int32)">
+            <summary>
+            Bakes this collection as a layer, in its path structure.
+            </summary>
+            <param name="doc"></param>
+            <param name="objIds"></param>
+            <param name="bakeObjects"></param>
+            <returns>The index of the baked layer</returns>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo">
+            <summary>
+            The Speckle Property Group Goo is a nested dictionary of (key, speckle property or property group).
+            The <see cref="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.Flatten"/> method will use the property delimiter on the keys to flatten the property group into properties.
+            </summary>
+            <summary>
+            The Speckle Property Group Goo is a dictionary of (key, speckle property or property group).
+            Flattened property group keys are the concatenated strings of all nested keys with the property delimiter
+            </summary>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.AssignToObjectAttributes(Rhino.DocObjects.ObjectAttributes)">
+            <summary>
+            Adds this property group to the input object attributes
+            </summary>
+            <param name="atts"></param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.Flatten">
+            <summary>
+            Flattens the value into a dictionary with concatenated keys
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.Unwrap">
+            <summary>
+            Unwraps the value into a Dictionary of equivalent structure
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.Clone">
+            <summary>
+            Performs a deep clone of the property group to prevent mutating upstream Grasshopper data.
+            </summary>
+            <returns>
+            A new SpecklePropertyGroupGoo instance with cloned nested properties.
+            Needed since adding support for dot notation [CNX-3179]
+            </returns>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.SetValueByPath(System.String,Speckle.Connectors.GrasshopperShared.Parameters.ISpecklePropertyGoo)">
+            <summary>
+            Sets a property value using dot-notation path traversal. Creates nested groups if they do not exist.
+            </summary>
+            <param name="path">The dot-notation property path.</param>
+            <param name="value">The Speckle property to set.</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.RemoveValueByPath(System.String)">
+            <summary>
+            Removes a property value using dot-notation path traversal.
+            </summary>
+            <param name="path">The dot-notation property path.</param>
+        </member>
+        <member name="M:Speckle.Connectors.GrasshopperShared.Parameters.SpecklePropertyGroupGoo.GetValueByPath(System.String)">
+            <summary>
+            Retrieves a property value using dot-notation path traversal. Attempts exact match first.
+            </summary>
+            <param name="path">The dot-notation property path.</param>
+            <returns>The matching property goo if found, otherwise null.</returns>
+        </member>
+        <member name="T:Speckle.Connectors.GrasshopperShared.Properties.Resources">
+            <summary>
+              A strongly-typed resource class, for looking up localized strings, etc.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.ResourceManager">
+            <summary>
+              Returns the cached ResourceManager instance used by this class.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.Culture">
+            <summary>
+              Overrides the current thread's CurrentUICulture property for all
+              resource lookups using this strongly typed resource class.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_logo">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_collections_create">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_collections_expand">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_deconstruct">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_inputs_collection">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_inputs_model">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_inputs_property">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_inputs_token">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_block_inst">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_block_def">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_dataobject">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_filter">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_geometry">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_objects_query">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_operations_account">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_operations_load">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_operations_publish">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_operations_syncload">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_operations_syncpublish">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_block_def">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_block_instance">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_dataobject">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_collection">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_material">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_geometry">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_param_properties">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_properties_create">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_properties_expand">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_properties_properties">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_properties_query">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="P:Speckle.Connectors.GrasshopperShared.Properties.Resources.speckle_state_access">
+            <summary>
+              Looks up a localized resource of type System.Drawing.Bitmap.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.AllowNullAttribute">
+            <summary>
+            Specifies that null is allowed as an input even if the corresponding type disallows it.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.ConstantExpectedAttribute">
+            <summary>
+            Indicates that the specified method parameter expects a constant.
+            </summary>
+            <remarks>
+            This can be used to inform tooling that a constant should be used as an argument for the annotated parameter.
+            </remarks>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.ConstantExpectedAttribute.Min">
+            <summary>
+            Indicates the minimum bound of the expected constant, inclusive.
+            </summary>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.ConstantExpectedAttribute.Max">
+            <summary>
+            Indicates the maximum bound of the expected constant, inclusive.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.DisallowNullAttribute">
+            <summary>
+            Specifies that null is disallowed as an input even if the corresponding type allows it.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.DoesNotReturnAttribute">
+            <summary>
+            Applied to a method that will never return under any circumstance.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.DoesNotReturnIfAttribute">
+            <summary>
+            Specifies that the method will not return if the associated Boolean parameter is passed the specified value.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.DoesNotReturnIfAttribute.#ctor(System.Boolean)">
+            <summary>
+            Initializes the attribute with the specified parameter value.
+            </summary>
+            <param name="parameterValue">
+            The condition parameter value. Code after the method will be considered unreachable
+            by diagnostics if the argument to the associated parameter matches this value.
+            </param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.DoesNotReturnIfAttribute.ParameterValue">
+            <summary>
+            Gets the condition parameter value.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.ExperimentalAttribute">
+            <summary>
+            Indicates that an API is experimental and it may change in the future.
+            </summary>
+            <remarks>
+            This attribute allows call sites to be flagged with a diagnostic that indicates that an experimental
+            feature is used. Authors can use this attribute to ship preview features in their assemblies.
+            </remarks>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.ExperimentalAttribute.#ctor(System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Diagnostics.CodeAnalysis.ExperimentalAttribute"/> class,
+            specifying the ID that the compiler will use when reporting a use of the API the attribute applies to.
+            </summary>
+            <param name="diagnosticId">The ID that the compiler will use when reporting a use of the API the attribute applies to.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.ExperimentalAttribute.DiagnosticId">
+            <summary>
+            Gets the ID that the compiler will use when reporting a use of the API the attribute applies to.
+            </summary>
+            <value>The unique diagnostic ID.</value>
+            <remarks>
+            The diagnostic ID is shown in build output for warnings and errors.
+            <para>This property represents the unique ID that can be used to suppress the warnings or errors, if needed.</para>
+            </remarks>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.ExperimentalAttribute.UrlFormat">
+            <summary>
+            Gets or sets the URL for corresponding documentation.
+            The API accepts a format string instead of an actual URL, creating a generic URL that includes the diagnostic ID.
+            </summary>
+            <value>The format string that represents a URL to corresponding documentation.</value>
+            <remarks>An example format string is <c>https://contoso.com/obsoletion-warnings/{0}</c>.</remarks>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.MaybeNullAttribute">
+            <summary>
+            Specifies that an output may be null even if the corresponding type disallows it.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.MaybeNullWhenAttribute">
+            <summary>
+            Specifies that when a method returns <see cref="P:System.Diagnostics.CodeAnalysis.MaybeNullWhenAttribute.ReturnValue"/>, the parameter may be null even if the corresponding type disallows it.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.MaybeNullWhenAttribute.#ctor(System.Boolean)">
+            <summary>
+            Initializes the attribute with the specified return value condition.
+            </summary>
+            <param name="returnValue">The return value condition. If the method returns this value, the associated parameter may be null.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.MaybeNullWhenAttribute.ReturnValue">
+            <summary>
+            Gets the return value condition.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.MemberNotNullAttribute">
+            <summary>
+            Specifies that the method or property will ensure that the listed field and property members have not-null values.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.MemberNotNullAttribute.#ctor(System.String)">
+            <summary>
+            Initializes the attribute with a field or property member.
+            </summary>
+            <param name="member">The field or property member that is promised to be not-null.</param>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.MemberNotNullAttribute.#ctor(System.String[])">
+            <summary>
+            Initializes the attribute with the list of field and property members.
+            </summary>
+            <param name="members">The list of field and property members that are promised to be not-null.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.MemberNotNullAttribute.Members">
+            <summary>
+            Gets field or property member names.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute">
+            <summary>
+            Specifies that the method or property will ensure that the listed field and property
+            members have not-null values when returning with the specified return value condition.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute.#ctor(System.Boolean,System.String)">
+            <summary>
+            Initializes the attribute with the specified return value condition and a field or property member.
+            </summary>
+            <param name="returnValue">The return value condition. If the method returns this value, the associated parameter will not be null.</param>
+            <param name="member">The field or property member that is promised to be not-null.</param>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute.#ctor(System.Boolean,System.String[])">
+            <summary>
+            Initializes the attribute with the specified return value condition and list of field and property members.
+            </summary>
+            <param name="returnValue">The return value condition. If the method returns this value, the associated parameter will not be null.</param>
+            <param name="members">The list of field and property members that are promised to be not-null.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute.ReturnValue">
+            <summary>
+            Gets the return value condition.
+            </summary>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.MemberNotNullWhenAttribute.Members">
+            <summary>
+            Gets field or property member names.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.NotNullAttribute">
+            <summary>
+            Specifies that an output will not be null even if the corresponding type allows it.
+            Specifies that an input argument was not null when the call returns.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.NotNullIfNotNullAttribute">
+            <summary>
+            Specifies that the output will be non-null if the named parameter is non-null.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.NotNullIfNotNullAttribute.#ctor(System.String)">
+            <summary>
+            Initializes the attribute with the associated parameter name.
+            </summary>
+            <param name="parameterName">The associated parameter name. The output will be non-null if the argument to the parameter specified is non-null.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.NotNullIfNotNullAttribute.ParameterName">
+            <summary>
+            Gets the associated parameter name.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.NotNullWhenAttribute">
+            <summary>
+            Specifies that when a method returns <see cref="P:System.Diagnostics.CodeAnalysis.NotNullWhenAttribute.ReturnValue"/>, the parameter will not be null even if the corresponding type allows it.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.NotNullWhenAttribute.#ctor(System.Boolean)">
+            <summary>
+            Initializes the attribute with the specified return value condition.
+            </summary>
+            <param name="returnValue">The return value condition. If the method returns this value, the associated parameter will not be null.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.NotNullWhenAttribute.ReturnValue">
+            <summary>Gets the return value condition.</summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute">
+            <summary>
+            Specifies that this constructor sets all required members for the current type,
+            and callers do not need to set any required members themselves.
+            </summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute">
+            <summary>
+            Specifies the syntax used in a string.
+            </summary>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.#ctor(System.String)">
+            <summary>
+            Initializes the <see cref="T:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute"/> with the identifier of the syntax used.
+            </summary>
+            <param name="syntax">The syntax identifier.</param>
+        </member>
+        <member name="M:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.#ctor(System.String,System.Object[])">
+            <summary>Initializes the <see cref="T:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute"/> with the identifier of the syntax used.</summary>
+            <param name="syntax">The syntax identifier.</param>
+            <param name="arguments">Optional arguments associated with the specific syntax employed.</param>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Syntax">
+            <summary>Gets the identifier of the syntax used.</summary>
+        </member>
+        <member name="P:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Arguments">
+            <summary>Optional arguments associated with the specific syntax employed.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.CompositeFormat">
+            <summary>The syntax identifier for strings containing composite formats for string formatting.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateOnlyFormat">
+            <summary>The syntax identifier for strings containing date format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateTimeFormat">
+            <summary>The syntax identifier for strings containing date and time format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.EnumFormat">
+            <summary>The syntax identifier for strings containing <see cref="T:System.Enum"/> format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.GuidFormat">
+            <summary>The syntax identifier for strings containing <see cref="T:System.Guid"/> format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Json">
+            <summary>The syntax identifier for strings containing JavaScript Object Notation (JSON).</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.NumericFormat">
+            <summary>The syntax identifier for strings containing numeric format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Regex">
+            <summary>The syntax identifier for strings containing regular expressions.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.TimeOnlyFormat">
+            <summary>The syntax identifier for strings containing time format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.TimeSpanFormat">
+            <summary>The syntax identifier for strings containing <see cref="T:System.TimeSpan"/> format specifiers.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Uri">
+            <summary>The syntax identifier for strings containing URIs.</summary>
+        </member>
+        <member name="F:System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.Xml">
+            <summary>The syntax identifier for strings containing XML.</summary>
+        </member>
+        <member name="T:System.Diagnostics.CodeAnalysis.UnscopedRefAttribute">
+            <summary>
+            Used to indicate a byref escapes and is not scoped.
+            </summary>
+            <remarks>
+            <para>
+            There are several cases where the C# compiler treats a <see langword="ref"/> as implicitly
+            <see langword="scoped"/> - where the compiler does not allow the <see langword="ref"/> to escape the method.
+            </para>
+            <para>
+            For example:
+            <list type="number">
+                <item><see langword="this"/> for <see langword="struct"/> instance methods.</item>
+                <item><see langword="ref"/> parameters that refer to <see langword="ref"/> <see langword="struct"/> types.</item>
+                <item><see langword="out"/> parameters.</item>
+            </list>
+            </para>
+            <para>
+            This attribute is used in those instances where the <see langword="ref"/> should be allowed to escape.
+            </para>
+            <para>
+            Applying this attribute, in any form, has impact on consumers of the applicable API. It is necessary for
+            API authors to understand the lifetime implications of applying this attribute and how it may impact their users.
+            </para>
+            </remarks>
+        </member>
+        <member name="T:System.Index">
+            <summary>Represent a type can be used to index a collection either from the start or the end.</summary>
+            <remarks>
+            Index is used by the C# compiler to support the new index syntax
+            <code>
+            int[] someArray = new int[5] { 1, 2, 3, 4, 5 } ;
+            int lastElement = someArray[^1]; // lastElement = 5
+            </code>
+            </remarks>
+        </member>
+        <member name="M:System.Index.#ctor(System.Int32,System.Boolean)">
+            <summary>Construct an Index using a value and indicating if the index is from the start or from the end.</summary>
+            <param name="value">The index value. it has to be zero or positive number.</param>
+            <param name="fromEnd">Indicating if the index is from the start or from the end.</param>
+            <remarks>
+            If the Index constructed from the end, index value 1 means pointing at the last element and index value 0 means pointing at beyond last element.
+            </remarks>
+        </member>
+        <member name="P:System.Index.Start">
+            <summary>Create an Index pointing at first element.</summary>
+        </member>
+        <member name="P:System.Index.End">
+            <summary>Create an Index pointing at beyond last element.</summary>
+        </member>
+        <member name="M:System.Index.FromStart(System.Int32)">
+            <summary>Create an Index from the start at the position indicated by the value.</summary>
+            <param name="value">The index value from the start.</param>
+        </member>
+        <member name="M:System.Index.FromEnd(System.Int32)">
+            <summary>Create an Index from the end at the position indicated by the value.</summary>
+            <param name="value">The index value from the end.</param>
+        </member>
+        <member name="P:System.Index.Value">
+            <summary>Returns the index value.</summary>
+        </member>
+        <member name="P:System.Index.IsFromEnd">
+            <summary>Indicates whether the index is from the start or the end.</summary>
+        </member>
+        <member name="M:System.Index.GetOffset(System.Int32)">
+            <summary>Calculate the offset from the start using the giving collection length.</summary>
+            <param name="length">The length of the collection that the Index will be used with. length has to be a positive value</param>
+            <remarks>
+            For performance reason, we don't validate the input length parameter and the returned offset value against negative values.
+            we don't validate either the returned offset is greater than the input length.
+            It is expected Index will be used with collections which always have non negative length/count. If the returned offset is negative and
+            then used to index a collection will get out of range exception which will be same affect as the validation.
+            </remarks>
+        </member>
+        <member name="M:System.Index.Equals(System.Object)">
+            <summary>Indicates whether the current Index object is equal to another object of the same type.</summary>
+            <param name="value">An object to compare with this object</param>
+        </member>
+        <member name="M:System.Index.Equals(System.Index)">
+            <summary>Indicates whether the current Index object is equal to another Index object.</summary>
+            <param name="other">An object to compare with this object</param>
+        </member>
+        <member name="M:System.Index.GetHashCode">
+            <summary>Returns the hash code for this instance.</summary>
+        </member>
+        <member name="M:System.Index.op_Implicit(System.Int32)~System.Index">
+            <summary>Converts integer number to an Index.</summary>
+        </member>
+        <member name="M:System.Index.ToString">
+            <summary>Converts the value of the current Index object to its equivalent string representation.</summary>
+        </member>
+        <member name="T:System.Range">
+            <summary>Represent a range has start and end indexes.</summary>
+            <remarks>
+            Range is used by the C# compiler to support the range syntax.
+            <code>
+            int[] someArray = new int[5] { 1, 2, 3, 4, 5 };
+            int[] subArray1 = someArray[0..2]; // { 1, 2 }
+            int[] subArray2 = someArray[1..^0]; // { 2, 3, 4, 5 }
+            </code>
+            </remarks>
+        </member>
+        <member name="P:System.Range.Start">
+            <summary>Represent the inclusive start index of the Range.</summary>
+        </member>
+        <member name="P:System.Range.End">
+            <summary>Represent the exclusive end index of the Range.</summary>
+        </member>
+        <member name="M:System.Range.#ctor(System.Index,System.Index)">
+            <summary>Construct a Range object using the start and end indexes.</summary>
+            <param name="start">Represent the inclusive start index of the range.</param>
+            <param name="end">Represent the exclusive end index of the range.</param>
+        </member>
+        <member name="M:System.Range.Equals(System.Object)">
+            <summary>Indicates whether the current Range object is equal to another object of the same type.</summary>
+            <param name="value">An object to compare with this object</param>
+        </member>
+        <member name="M:System.Range.Equals(System.Range)">
+            <summary>Indicates whether the current Range object is equal to another Range object.</summary>
+            <param name="other">An object to compare with this object</param>
+        </member>
+        <member name="M:System.Range.GetHashCode">
+            <summary>Returns the hash code for this instance.</summary>
+        </member>
+        <member name="M:System.Range.ToString">
+            <summary>Converts the value of the current Range object to its equivalent string representation.</summary>
+        </member>
+        <member name="M:System.Range.StartAt(System.Index)">
+            <summary>Create a Range object starting from start index to the end of the collection.</summary>
+        </member>
+        <member name="M:System.Range.EndAt(System.Index)">
+            <summary>Create a Range object starting from first element in the collection to the end Index.</summary>
+        </member>
+        <member name="P:System.Range.All">
+            <summary>Create a Range object starting from first element to the end.</summary>
+        </member>
+        <member name="M:System.Range.GetOffsetAndLength(System.Int32)">
+            <summary>Calculate the start offset and length of range object using a collection length.</summary>
+            <param name="length">The length of the collection that the range will be used with. length has to be a positive value.</param>
+            <remarks>
+            For performance reason, we don't validate the input length parameter against negative values.
+            It is expected Range will be used with collections which always have non negative length/count.
+            We validate the range is inside the length scope though.
+            </remarks>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.CallerArgumentExpressionAttribute">
+            <summary>
+            An attribute that allows parameters to receive the expression of other parameters.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.CallerArgumentExpressionAttribute.#ctor(System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.CompilerServices.CallerArgumentExpressionAttribute"/> class.
+            </summary>
+            <param name="parameterName">The condition parameter value.</param>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.CallerArgumentExpressionAttribute.ParameterName">
+            <summary>
+            Gets the parameter name the expression is retrieved from.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.CollectionBuilderAttribute.#ctor(System.Type,System.String)">
+            <summary>
+            Initialize the attribute to refer to the <paramref name="methodName"/> method on the <paramref name="builderType"/> type.
+            </summary>
+            <param name="builderType">The type of the builder to use to construct the collection.</param>
+            <param name="methodName">The name of the method on the builder to use to construct the collection.</param>
+            <remarks>
+            <paramref name="methodName"/> must refer to a static method that accepts a single parameter of
+            type <see cref="T:System.ReadOnlySpan`1"/> and returns an instance of the collection being built containing
+            a copy of the data from that span.  In future releases of .NET, additional patterns may be supported.
+            </remarks>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.CollectionBuilderAttribute.BuilderType">
+            <summary>
+            Gets the type of the builder to use to construct the collection.
+            </summary>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.CollectionBuilderAttribute.MethodName">
+            <summary>
+            Gets the name of the method on the builder to use to construct the collection.
+            </summary>
+            <remarks>
+            This should match the metadata name of the target method.
+            For example, this might be ".ctor" if targeting the type's constructor.
+            </remarks>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute">
+            <summary>
+            Indicates that compiler support for a particular feature is required for the location where this attribute is applied.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.#ctor(System.String)">
+            <summary>
+            Creates a new instance of the <see cref="T:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute"/> type.
+            </summary>
+            <param name="featureName">The name of the feature to indicate.</param>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.FeatureName">
+            <summary>
+            The name of the compiler feature.
+            </summary>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.IsOptional">
+            <summary>
+            If true, the compiler can choose to allow access to the location where this attribute is applied if it does not understand <see cref="P:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.FeatureName"/>.
+            </summary>
+        </member>
+        <member name="F:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.RefStructs">
+            <summary>
+            The <see cref="P:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.FeatureName"/> used for the ref structs C# feature.
+            </summary>
+        </member>
+        <member name="F:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.RequiredMembers">
+            <summary>
+            The <see cref="P:System.Runtime.CompilerServices.CompilerFeatureRequiredAttribute.FeatureName"/> used for the required members C# feature.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute">
+            <summary>
+            Indicates which arguments to a method involving an interpolated string handler should be passed to that handler.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute.#ctor(System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute"/> class.
+            </summary>
+            <param name="argument">The name of the argument that should be passed to the handler.</param>
+            <remarks><see langword="null"/> may be used as the name of the receiver in an instance method.</remarks>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute.#ctor(System.String[])">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute"/> class.
+            </summary>
+            <param name="arguments">The names of the arguments that should be passed to the handler.</param>
+            <remarks><see langword="null"/> may be used as the name of the receiver in an instance method.</remarks>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.InterpolatedStringHandlerArgumentAttribute.Arguments">
+            <summary>
+            Gets the names of the arguments that should be passed to the handler.
+            </summary>
+            <remarks><see langword="null"/> may be used as the name of the receiver in an instance method.</remarks>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.InterpolatedStringHandlerAttribute">
+            <summary>
+            Indicates the attributed type is to be used as an interpolated string handler.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.IsExternalInit">
+            <summary>
+            Reserved to be used by the compiler for tracking metadata.
+            This class should not be used by developers in source code.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.ModuleInitializerAttribute">
+             <summary>
+             Used to indicate to the compiler that a method should be called
+             in its containing module's initializer.
+             </summary>
+             <remarks>
+             When one or more valid methods
+             with this attribute are found in a compilation, the compiler will
+             emit a module initializer which calls each of the attributed methods.
+            
+             Certain requirements are imposed on any method targeted with this attribute:
+             - The method must be `static`.
+             - The method must be an ordinary member method, as opposed to a property accessor, constructor, local function, etc.
+             - The method must be parameterless.
+             - The method must return `void`.
+             - The method must not be generic or be contained in a generic type.
+             - The method's effective accessibility must be `internal` or `public`.
+            
+             The specification for module initializers in the .NET runtime can be found here:
+             https://github.com/dotnet/runtime/blob/main/docs/design/specs/Ecma-335-Augments.md#module-initializer
+             </remarks>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute">
+            <summary>
+            Specifies the priority of a member in overload resolution. When unspecified, the default priority is 0.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute.#ctor(System.Int32)">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute"/> class.
+            </summary>
+            <param name="priority">The priority of the attributed member. Higher numbers are prioritized, lower numbers are deprioritized. 0 is the default if no attribute is present.</param>
+        </member>
+        <member name="P:System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute.Priority">
+            <summary>
+            The priority of the member.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.ParamCollectionAttribute">
+            <summary>
+            Indicates that a method will allow a variable number of arguments in its invocation.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.RequiredMemberAttribute">
+            <summary>
+            Specifies that a type has required members or that a member is required.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.RequiresLocationAttribute">
+            <summary>
+            Reserved for use by a compiler for tracking metadata.
+            This attribute should not be used by developers in source code.
+            </summary>
+        </member>
+        <member name="T:System.Runtime.CompilerServices.SkipLocalsInitAttribute">
+            <summary>
+            Used to indicate to the compiler that the <c>.locals init</c> flag should not be set in method headers.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute.#ctor">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute"/> class.
+            </summary>
+        </member>
+        <member name="M:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute.#ctor(System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute"/> class with the specified message.
+            </summary>
+            <param name="message">An optional message associated with this attribute instance.</param>
+        </member>
+        <member name="P:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute.Message">
+            <summary>
+            Returns the optional message associated with this attribute instance.
+            </summary>
+        </member>
+        <member name="P:System.Runtime.Versioning.RequiresPreviewFeaturesAttribute.Url">
+            <summary>
+            Returns the optional URL associated with this attribute instance.
+            </summary>
+        </member>
+    </members>
+</doc>
