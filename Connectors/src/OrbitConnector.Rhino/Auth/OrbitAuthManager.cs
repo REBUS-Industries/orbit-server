@@ -39,7 +39,11 @@ public class OrbitAuthManager
         var appId     = _config.GetAppId(target);
         var appSecret = _config.GetAppSecret(target);
 
-        var (challenge, verifier) = GenerateChallenge();
+        // Speckle auth uses a simple nonce challenge — the server stores whatever string
+        // you pass in the auth URL and does a strict equality check on token exchange.
+        // We use a single random challenge (no hashing needed).
+        var challenge   = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .Replace("+", "-").Replace("/", "_").TrimEnd('=');
         var callbackUrl = $"http://localhost:{CALLBACK_PORT}/";
 
         // Open browser to server auth page
@@ -53,8 +57,8 @@ public class OrbitAuthManager
         // Wait for callback
         var code = await WaitForCallbackAsync(ct);
 
-        // Exchange code for token
-        var token = await ExchangeCodeAsync(serverUrl, appId, appSecret, code, verifier, callbackUrl, ct);
+        // Exchange code for token — send the same challenge we used in the auth URL
+        var token = await ExchangeCodeAsync(serverUrl, appId, appSecret, code, challenge, callbackUrl, ct);
 
         return token;
     }
@@ -104,15 +108,6 @@ public class OrbitAuthManager
             ?? throw new OrbitAuthException("Token exchange returned no token");
     }
 
-    private static (string challenge, string verifier) GenerateChallenge()
-    {
-        var verifier  = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-            .Replace("+", "-").Replace("/", "_").TrimEnd('=');
-        var hash      = SHA256.HashData(Encoding.ASCII.GetBytes(verifier));
-        var challenge = Convert.ToBase64String(hash)
-            .Replace("+", "-").Replace("/", "_").TrimEnd('=');
-        return (challenge, verifier);
-    }
 }
 
 public class OrbitAuthException : Exception
