@@ -19,3 +19,12 @@ COPY streams.js  /speckle-server/packages/server/dist/modules/core/repositories/
 #   and forwards `serverAdminBypass: true` into the three getUserStreams* calls
 #   that back the `activeUser.projects` GraphQL field.
 COPY projects.js /speckle-server/packages/server/dist/modules/core/graph/resolvers/projects.js
+
+# Patch 3 — serverInvites resolver: make the project-invite `use` mutation
+#   idempotent. Apollo fires multiple useProjectInvite calls per "Accept"
+#   click; the first deletes the invite row + adds the user to stream_acl,
+#   the duplicates land on the now-empty row and throw InviteNotFoundError
+#   "Attempted to finalize nonexistant invite". The patch swallows that
+#   specific error when the user does already have effective access to
+#   the project (explicit member, or server:admin with ADMIN_OVERRIDE_ENABLED).
+COPY serverInvites.js /speckle-server/packages/server/dist/modules/serverinvites/graph/resolvers/serverInvites.js

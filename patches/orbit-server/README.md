@@ -32,6 +32,24 @@ image (see workflow below).
 
 ## Active patches
 
+### `serverInvites.js` — idempotent project-invite acceptance
+
+The Speckle frontend fires multiple `useProjectInvite` GraphQL mutations
+per "Accept invite" click (Apollo refetch racing with the user click).
+The first call deletes the `server_invites` row and adds the user to
+`stream_acl`; the duplicates land on the now-empty row and throw
+`InviteNotFoundError("Attempted to finalize nonexistant invite")`. The
+duplicate error then surfaces as the user-visible "Couldn't process
+project invite" toast even though the membership grant succeeded.
+
+Both `ProjectInviteMutations.use` and `streamInviteUse` resolvers are
+wrapped: when `InviteNotFoundError` fires AND the calling user already
+has effective access to the project (explicit `stream_acl` member, or
+`server:admin` while `ADMIN_OVERRIDE_ENABLED=true`), the error is
+swallowed and the mutation returns `true`. Any other failure mode
+(truly bogus token, mismatched email, downstream `processInvite`
+failure) re-throws normally so legitimate problems still surface.
+
 ### `streams.js` + `projects.js` — server-admin sees all projects
 
 When `ADMIN_OVERRIDE_ENABLED=true`, server admins can already open any
