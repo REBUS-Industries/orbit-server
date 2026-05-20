@@ -69,9 +69,20 @@ services:
         condition: service_healthy
 
   # â”€â”€ ORBIT Server (API / Backend) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Image: ghcr.io/rebus-orbit/orbit-server
+  # Base image:    ghcr.io/rebus-orbit/orbit-server
+  # Patched image: orbit-server-patched (built locally on the VM from ./patches/orbit-server)
+  #
+  # The `build:` directive layers ORBIT-specific compiled-JS patches on top
+  # of the upstream image (see ./patches/orbit-server/README.md). To bump
+  # the upstream version, edit ORBIT_SERVER_VERSION in .env and run:
+  #   docker compose up -d --build orbit-server
   orbit-server:
-    image: ghcr.io/rebus-orbit/orbit-server:${ORBIT_SERVER_VERSION:-latest}
+    build:
+      context: ./patches/orbit-server
+      args:
+        ORBIT_SERVER_BASE_VERSION: ${ORBIT_SERVER_VERSION:-latest}
+    image: orbit-server-patched:${ORBIT_SERVER_VERSION:-latest}
+    pull_policy: build
     restart: unless-stopped
     environment:
       CANONICAL_URL:              ${SERVER_URL:?SERVER_URL must be set}
