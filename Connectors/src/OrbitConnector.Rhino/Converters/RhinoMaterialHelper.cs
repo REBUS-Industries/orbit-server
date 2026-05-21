@@ -13,6 +13,55 @@ namespace OrbitConnector.Rhino.Converters;
 /// </summary>
 internal static class RhinoMaterialHelper
 {
+    // Reuse the same temp dir for the lifetime of the agent process so embedded
+    // textures that are extracted multiple times hit the SHA-256 dedup in PendingBlobFiles.
+    private static readonly string TextureTempDir =
+        Path.Combine(Path.GetTempPath(), "PRISM.Agent", "textures");
+
+    /// <summary>
+    /// Resolve a texture file path from a <see cref="RenderTexture"/>:
+    /// <list type="number">
+    ///   <item>Use <see cref="SimulatedTexture.Filename"/> when the file already
+    ///   exists on disk (file-referenced textures whose original path is reachable).</item>
+    ///   <item>Fall back to <see cref="RenderTexture.WriteImageFile"/> to extract
+    ///   embedded textures (or file-referenced textures whose source machine path
+    ///   is not reachable on this workstation). The extracted file is placed in a
+    ///   per-process temp dir and SHA-256-keyed so repeated calls for the same
+    ///   texture reuse the already-extracted copy.</item>
+    /// </list>
+    /// Returns <c>null</c> when no usable path can be produced.
+    /// </summary>
+    private static string? ResolveTexturePath(RenderTexture rt)
+    {
+        // Fast path: SimulatedTexture points to an accessible file on disk.
+        var simTex = rt.SimulatedTexture(RenderTexture.TextureGeneration.Allow);
+        var p = simTex?.Filename;
+        if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
+            return p;
+
+        // Fallback: extract the texture via WriteImageFile (handles embedded
+        // textures and stale absolute paths from the source machine).
+        // Use a deterministic temp name so we only extract once per texture.
+        try
+        {
+            Directory.CreateDirectory(TextureTempDir);
+            // Derive a stable filename from the RenderTexture id; fall back to the
+            // original basename (may collide for same-name textures — acceptable
+            // because SHA-256 dedup in PendingBlobFiles prevents duplicate uploads).
+            var baseName = string.IsNullOrWhiteSpace(p)
+                ? $"{rt.Id:N}.png"
+                : $"{rt.Id:N}_{Path.GetFileName(p)}";
+            var dest = Path.Combine(TextureTempDir, baseName);
+            if (File.Exists(dest))
+                return dest;
+            if (rt.WriteImageFile(dest, false) && File.Exists(dest))
+                return dest;
+        }
+        catch { /* best-effort */ }
+
+        return null;
+    }
+
     public static void AttachTextures(
         RhinoObject rhinoObj,
         OrbitRenderMaterial rm,
@@ -102,10 +151,8 @@ internal static class RhinoMaterialHelper
                             {
                                 try
                                 {
-                                    var simTex = rt.SimulatedTexture(
-                                        RenderTexture.TextureGeneration.Allow);
-                                    var p = simTex?.Filename;
-                                    if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
+                                    var p = ResolveTexturePath(rt);
+                                    if (!string.IsNullOrWhiteSpace(p))
                                         AttachSlot(slot, p);
                                 }
                                 catch { /* skip slot */ }
@@ -142,7 +189,7 @@ internal static class RhinoMaterialHelper
                 }
             }
 
-            // Strategy 3: legacy Bitmap
+            // Strategy 3: legacy Bitmap (file path)
             if (!slotsAttached.Contains("basecolor"))
             {
                 try

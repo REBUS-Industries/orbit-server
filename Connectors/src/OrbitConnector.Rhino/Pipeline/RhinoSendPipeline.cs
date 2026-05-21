@@ -129,6 +129,20 @@ public class RhinoSendPipeline
         return version.Id!;
     }
 
+    /// <summary>
+    /// Geometry types that must NEVER be sent: they produce misleading
+    /// flat-plane artefacts or have no meaningful 3D representation.
+    /// <list type="bullet">
+    ///   <item><see cref="ClippingPlaneSurface"/> — section-cut helpers; convert as a giant flat plane.</item>
+    ///   <item><see cref="Hatch"/> — 2-D fill patterns; produce flat mesh in viewport but have no 3-D volume.</item>
+    ///   <item><see cref="AnnotationBase"/> — dimensions, leaders, text; convert to near-flat bboxes.</item>
+    /// </list>
+    /// </summary>
+    private static bool ShouldSkipGeometry(GeometryBase? g) =>
+        g is ClippingPlaneSurface
+        || g is Hatch
+        || g is AnnotationBase;
+
     private List<RhinoObject> ExtractObjects(ConnectorCard card, RhinoDoc doc)
     {
         // Use ObjectEnumeratorSettings — the correct Rhino API for filtering doc objects
@@ -144,7 +158,7 @@ public class RhinoSendPipeline
         };
 
         var allNormal = doc.Objects.GetObjectList(settings)
-                          .Where(o => o.Geometry != null)
+                          .Where(o => o.Geometry != null && !ShouldSkipGeometry(o.Geometry))
                           .ToList();
 
         return card.LayerMode switch
