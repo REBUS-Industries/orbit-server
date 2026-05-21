@@ -20,6 +20,16 @@ internal static class RhinoObjectMeshes
 
     /// <summary>
     /// Try every meshing strategy Rhino exposes for this object.
+    /// <para>
+    /// Multiple per-face render meshes are merged into one mesh before
+    /// returning — the working interactive Speckle/ORBIT plug-in appends
+    /// per-face render meshes into a single mesh before sending, matching
+    /// what the viewport draws. Without this, polysurfaces, extrusions,
+    /// and block-member objects arrive at the receiver as N independent
+    /// <c>displayValue</c> fragments that the viewer renders as visually
+    /// disconnected pieces (v0.1.20 fix — mirrors the merge in
+    /// <see cref="RhinoBrepDisplayMeshes.Extract"/>).
+    /// </para>
     /// </summary>
     public static IReadOnlyList<Mesh> ExtractFromObject(RhinoObject rhinoObj, ConversionContext context)
     {
@@ -27,8 +37,20 @@ internal static class RhinoObjectMeshes
         {
             var meshes = rhinoObj.GetMeshes(mt);
             var nonEmpty = FilterNonEmpty(meshes);
-            if (nonEmpty.Count > 0)
+            if (nonEmpty.Count == 1)
                 return nonEmpty;
+            if (nonEmpty.Count > 1)
+            {
+                var merged = new Mesh();
+                foreach (var m in nonEmpty)
+                    merged.Append(m);
+                if (merged.Vertices.Count > 0)
+                {
+                    context.Log?.Invoke(
+                        $"[ORBIT-DIAG] merged {nonEmpty.Count} object render meshes for {rhinoObj.Id} into 1");
+                    return new List<Mesh> { merged };
+                }
+            }
         }
 
         if (rhinoObj.Geometry != null)
