@@ -57,7 +57,27 @@ internal static class RhinoBrepDisplayMeshes
             }
         }
 
-        return TessellateBrep(brep);
+        // Fallback: per-face tessellation. Merge fragments into a single mesh
+        // so block-instance members (where the source sub-object lives in an
+        // InstanceDefinition and therefore has no cached render mesh on the
+        // active document) and any other Brep without a warm render-mesh
+        // cache do not arrive at the viewer as N independent display-value
+        // planes — that's the "extra flat planes" bug (a 6-face cube member
+        // would appear as 6 disjoint quads). Mesh.Append does not weld
+        // vertices, so sharp-crease topology from JaggedSeams is preserved.
+        var tess = TessellateBrep(brep);
+        if (tess.Count <= 1) return tess;
+
+        var fallbackMerged = new Mesh();
+        foreach (var m in tess)
+            fallbackMerged.Append(m);
+        if (fallbackMerged.Vertices.Count == 0) return tess;
+
+        context.Log?.Invoke(
+            $"[ORBIT-DIAG] merged {tess.Count} tessellated faces for Brep " +
+            $"{(rhinoObj?.Id.ToString() ?? "<no-rhino-obj>")} into 1 " +
+            "(no cached render mesh — typical for instance-definition members)");
+        return new List<Mesh> { fallbackMerged };
     }
 
     /// <summary>

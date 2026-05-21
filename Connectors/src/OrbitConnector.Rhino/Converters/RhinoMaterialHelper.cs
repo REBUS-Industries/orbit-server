@@ -217,6 +217,44 @@ internal static class RhinoMaterialHelper
         return null;
     }
 
+    /// <summary>
+    /// Probe the four texture-discovery strategies for any texture reference
+    /// whose <c>FileReference.FullPath</c> is set but does not exist on this
+    /// workstation. Used by <see cref="AttachTextures"/> to emit a clear
+    /// <c>[ORBIT-TEXTURE-MISSING]</c> diagnostic when the .3dm references
+    /// linked textures that the headless agent cannot read (the typical
+    /// "Dropbox path on the artist's machine, not on PC02" failure mode).
+    /// </summary>
+    private static List<(string slot, string path)> CollectUnresolvedTexturePaths(
+        global::Rhino.DocObjects.Material mat, RhinoDoc doc)
+    {
+        var found = new List<(string slot, string path)>();
+        void Add(string slot, DocTexture? tex)
+        {
+            var p = tex?.FileReference?.FullPath;
+            if (!string.IsNullOrWhiteSpace(p) && !File.Exists(p!))
+                found.Add((slot, p!));
+        }
+
+        try
+        {
+            if (mat.IsPhysicallyBased && mat.PhysicallyBased is not null)
+            {
+                var pbr = mat.PhysicallyBased;
+                Add("basecolor", pbr.GetTexture(TextureType.PBR_BaseColor));
+                Add("emission",  pbr.GetTexture(TextureType.PBR_Emission));
+                Add("roughness", pbr.GetTexture(TextureType.PBR_Roughness));
+                Add("metallic",  pbr.GetTexture(TextureType.PBR_Metallic));
+            }
+        }
+        catch { /* best-effort probe */ }
+
+        try { Add("basecolor", mat.GetTexture(TextureType.Bitmap)); }
+        catch { /* best-effort probe */ }
+
+        return found;
+    }
+
     public static void AttachTextures(
         RhinoObject rhinoObj,
         OrbitRenderMaterial rm,
@@ -477,9 +515,33 @@ internal static class RhinoMaterialHelper
 
             if (slotsAttached.Count == 0)
             {
-                log?.Invoke(
-                    $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' → NO TEXTURES ATTACHED " +
-                    "(all 4 strategies returned null/missing)");
+                // Build a "what we DID find but couldn't resolve" trail so the
+                // user can immediately see whether the source material has no
+                // textures at all (fine), or has texture references whose
+                // files are not available on this workstation (actionable —
+                // embed them in the .3dm or sync the texture folder).
+                var unresolved = CollectUnresolvedTexturePaths(mat, doc);
+                if (unresolved.Count == 0)
+                {
+                    log?.Invoke(
+                        $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' → NO TEXTURES ATTACHED " +
+                        "(material has no texture references — colour-only material)");
+                }
+                else
+                {
+                    log?.Invoke(
+                        $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' → " +
+                        "[ORBIT-TEXTURE-MISSING] material references " +
+                        $"{unresolved.Count} texture file(s) that do NOT exist on this " +
+                        "workstation (PRISM.Agent cannot upload textures from paths it " +
+                        "cannot read). Embed the textures in the .3dm (Rhino: File → Save " +
+                        "As → 'Save textures' option) or place them on a path the " +
+                        "workstation can access:");
+                    foreach (var (slot, path) in unresolved)
+                    {
+                        log?.Invoke($"      missing-file slot='{slot}' path='{path}'");
+                    }
+                }
                 return;
             }
 
