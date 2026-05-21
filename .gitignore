@@ -8,7 +8,7 @@ Infra/id_ed25519_*
 
 # Never commit real credentials (root .env for docker-compose)
 # Docker volumes (local dev only)
-data/
+/data/
 
 # Local build artifacts
 **/node_modules/

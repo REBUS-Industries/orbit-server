@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using Orbit.Objects.BuiltElements;
+using Orbit.Objects.Proxies;
 
 namespace Orbit.Objects.Base;
 
@@ -63,6 +64,25 @@ public class OrbitObject : OrbitBase
     /// </summary>
     [JsonProperty("@elements")]
     public List<OrbitBase>? Elements { get; set; }
+
+    /// <summary>
+    /// Detached block definition proxies. Kept out of the visible layer tree so
+    /// the viewer renders placed instances, not the definition geometry itself.
+    /// </summary>
+    [JsonProperty("@definitionProxies")]
+    public List<DefinitionProxy>? DefinitionProxies { get; set; }
+
+    /// <summary>Detached material proxies reserved for receive/bake workflows.</summary>
+    [JsonProperty("@renderMaterialProxies")]
+    public List<RenderMaterialProxy>? RenderMaterialProxies { get; set; }
+
+    /// <summary>Detached colour proxies reserved for receive/bake workflows.</summary>
+    [JsonProperty("@colorProxies")]
+    public List<ColorProxy>? ColorProxies { get; set; }
+
+    /// <summary>Detached group proxies reserved for receive/bake workflows.</summary>
+    [JsonProperty("@groupProxies")]
+    public List<GroupProxy>? GroupProxies { get; set; }
 
     /// <summary>
     /// Named views from the source application. Stored INLINE (no <c>@</c> prefix) so the

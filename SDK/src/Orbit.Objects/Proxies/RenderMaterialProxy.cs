@@ -1,11 +1,20 @@
 using Newtonsoft.Json;
+using Orbit.Objects.Other;
 
 namespace Orbit.Objects.Proxies;
 
 /// <summary>
-/// Stores a render material and the set of object applicationIds that reference it.
-/// Proxies are stored at the root of the version object tree, not nested within objects.
-/// This keeps geometry objects lightweight and deduplicates material definitions.
+/// Stores a <see cref="RenderMaterial"/> and the set of object applicationIds
+/// that reference it. Proxies are stored at the root of the version object
+/// tree, not nested within objects. This keeps geometry objects lightweight
+/// and deduplicates material definitions.
+///
+/// NOTE: The working Speckle reference deployment <i>currently</i> attaches
+/// <see cref="RenderMaterial"/> inline on each <see cref="Geometry.Mesh"/>
+/// (via <c>Mesh.RenderMaterial</c>) and does <b>not</b> emit
+/// <c>renderMaterialProxies</c> at the root. Proxies are kept in the schema
+/// for future use (e.g. by the receive/bake pipeline that does its own
+/// deduplication).
 /// </summary>
 public class RenderMaterialProxy : Base.OrbitBase
 {
@@ -18,16 +27,4 @@ public class RenderMaterialProxy : Base.OrbitBase
     /// </summary>
     [JsonProperty("objectIds")]
     public List<string>? ObjectIds { get; set; }
-}
-
-public class RenderMaterial : Base.OrbitBase
-{
-    [JsonProperty("name")]         public string? Name         { get; set; }
-    [JsonProperty("opacity")]      public double  Opacity      { get; set; } = 1.0;
-    [JsonProperty("metalness")]    public double  Metalness    { get; set; } = 0.0;
-    [JsonProperty("roughness")]    public double  Roughness    { get; set; } = 1.0;
-    /// <summary>Diffuse colour as ARGB int.</summary>
-    [JsonProperty("diffuse")]      public int     Diffuse      { get; set; } = -1; // white
-    /// <summary>Emissive colour as ARGB int.</summary>
-    [JsonProperty("emissive")]     public int     Emissive     { get; set; } = -16777216; // black
 }
