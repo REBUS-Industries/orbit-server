@@ -11,10 +11,12 @@ public class OrbitClient
 {
     private readonly OrbitGraphQLClient _gql;
     public string ServerUrl { get; }
+    public string AuthToken { get; }
 
     public OrbitClient(string serverUrl, string authToken)
     {
         ServerUrl = serverUrl.TrimEnd('/');
+        AuthToken = authToken;
         _gql = new OrbitGraphQLClient(ServerUrl, authToken);
     }
 
