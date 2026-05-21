@@ -45,6 +45,14 @@ public class ConversionContext
     /// </summary>
     public Dictionary<string, string> PendingBlobFiles { get; } = new();
 
+    /// <summary>
+    /// Optional sink for diagnostic log lines emitted by helpers such as
+    /// <see cref="RhinoMaterialHelper.AttachTextures"/>. The pipeline wires
+    /// this to its caller-supplied progress/log callback so logs surface in
+    /// the agent's local log file and (where available) the admin UI.
+    /// </summary>
+    public Action<string>? Log { get; set; }
+
     public ConversionContext(RhinoDoc doc)
     {
         Doc = doc;
@@ -180,7 +188,7 @@ public class ConversionContext
                 roughness: roughness,
                 metalness: metalness);
 
-            RhinoMaterialHelper.AttachTextures(obj, material, Doc, PendingBlobFiles);
+            RhinoMaterialHelper.AttachTextures(obj, material, Doc, PendingBlobFiles, Log);
 
             RegisteredMaterials[cacheKey] = material;
             return material;
@@ -210,7 +218,7 @@ public class ConversionContext
                 roughness: roughness,
                 metalness: metalness);
 
-            RhinoMaterialHelper.AttachTextures(obj, material, Doc, PendingBlobFiles);
+            RhinoMaterialHelper.AttachTextures(obj, material, Doc, PendingBlobFiles, Log);
 
             RegisteredMaterials[matIdx] = material;
             return material;

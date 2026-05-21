@@ -50,19 +50,41 @@ public class RhinoSendPipeline
     /// <summary>
     /// Execute a full send. Returns the created version id.
     /// </summary>
+    /// <param name="log">
+    /// Optional diagnostic sink. When non-null, every material/texture decision
+    /// and every blob upload result is forwarded to it. Lines are also written
+    /// to <see cref="RhinoApp.WriteLine"/> for visibility inside an interactive
+    /// Rhino session. PRISM's headless agent injects an <c>ILogger</c>-backed
+    /// callback so the lines land in the agent's Serilog file and the admin UI.
+    /// </param>
     public async Task<string> SendAsync(
         ConnectorCard card,
         RhinoDoc doc,
         IOrbitTransport transport,
         OrbitClient client,
         IProgress<(string status, int percent)>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<string>? log = null)
     {
+        // Fan-out to both Rhino's command output and the caller-supplied sink.
+        // RhinoApp.WriteLine remains the legacy connector convention; the
+        // caller sink (PRISM agent) writes to Serilog → admin UI.
+        void Diag(string line)
+        {
+            try { RhinoApp.WriteLine(line); } catch { /* headless host without Rhino UI */ }
+            try { log?.Invoke(line); }       catch { /* never let logging fail a send */ }
+        }
+
+        Diag($"[ORBIT-DIAG] SendAsync start: card type={card.Type} mode={card.LayerMode} " +
+             $"project={card.ProjectId} model={card.ModelId} docObjects={doc.Objects.Count}");
+
         progress?.Report(("Extracting objects…", 0));
         var context = new ConversionContext(doc);
+        context.Log = Diag;
 
         // 1. EXTRACT objects from document
         var rhinoObjects = ExtractObjects(card, doc);
+        Diag($"[ORBIT-DIAG] extracted {rhinoObjects.Count} sendable objects");
         progress?.Report(($"Found {rhinoObjects.Count} objects…", 5));
         if (rhinoObjects.Count == 0)
             throw new InvalidOperationException(
@@ -74,6 +96,17 @@ public class RhinoSendPipeline
         var root = BuildObjectTree(rhinoObjects, doc, context, card);
         var totalConverted = root.Elements?.Sum(e => (e as OrbitObject)?.Elements?.Count ?? 0) ?? 0;
         progress?.Report(($"Converted {totalConverted} objects, serialising…", 35));
+
+        // Summary of texture extraction — the single most important diagnostic
+        // for Phase 1 of the PRISM texture-loss investigation.
+        long totalBlobBytes = 0;
+        foreach (var path in context.PendingBlobFiles.Values)
+        {
+            try { totalBlobBytes += new FileInfo(path).Length; } catch { /* missing file logged below */ }
+        }
+        Diag($"[ORBIT-DIAG] conversion summary: convertedObjects={totalConverted} " +
+             $"pendingBlobs={context.PendingBlobFiles.Count} totalBlobBytes={totalBlobBytes} " +
+             $"registeredMaterials={context.RegisteredMaterials.Count}");
 
         // 2.5 UPLOAD TEXTURE BLOBS + PATCH PLACEHOLDERS
         // The converters left `@blob:SHA256HEX` placeholders on every textured
@@ -88,10 +121,25 @@ public class RhinoSendPipeline
         if (context.PendingBlobFiles.Count > 0)
         {
             progress?.Report(($"Uploading {context.PendingBlobFiles.Count} texture(s)…", 36));
+            Diag($"[ORBIT-DIAG] uploading {context.PendingBlobFiles.Count} blobs " +
+                 $"totalling {totalBlobBytes} bytes to {client.ServerUrl}/api/stream/{card.ProjectId}/blob");
             using var blobUploader = new OrbitBlobUploader(
                 client.ServerUrl, card.ProjectId!, client.AuthToken);
-            var hashToServerId = await blobUploader.UploadAsync(context.PendingBlobFiles, ct);
+            var hashToServerId = await blobUploader.UploadAsync(context.PendingBlobFiles, ct, Diag);
+            Diag($"[ORBIT-DIAG] uploader returned {hashToServerId.Count}/{context.PendingBlobFiles.Count} blob ids");
+            foreach (var (hash, blobId) in hashToServerId)
+                Diag($"[ORBIT-DIAG]   blob {hash[..16]}… → server id '{blobId}'");
+            var missing = context.PendingBlobFiles.Keys.Where(h => !hashToServerId.ContainsKey(h)).ToList();
+            foreach (var hash in missing)
+                Diag($"[ORBIT-DIAG]   blob {hash[..16]}… UPLOAD FAILED " +
+                     $"(file: {context.PendingBlobFiles[hash]})");
+
             TextureBlobPatcher.Patch(root, hashToServerId);
+            Diag($"[ORBIT-DIAG] patched {hashToServerId.Count} @blob:HASH placeholders → server blob ids");
+        }
+        else
+        {
+            Diag("[ORBIT-DIAG] PendingBlobFiles is empty — no texture upload step");
         }
 
         // 3. SERIALISE

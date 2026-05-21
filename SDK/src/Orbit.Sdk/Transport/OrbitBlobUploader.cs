@@ -28,9 +28,14 @@ public sealed class OrbitBlobUploader : IDisposable
     /// Upload every unique file in <paramref name="hashToFilePath"/>.
     /// Keys are lowercase SHA-256 hex digests of file bytes.
     /// </summary>
+    /// <param name="log">
+    /// Optional diagnostic sink. Receives one line per upload attempt with
+    /// status (200/non-success/exception) and the assigned server blob id.
+    /// </param>
     public async Task<Dictionary<string, string>> UploadAsync(
         IReadOnlyDictionary<string, string> hashToFilePath,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<string>? log = null)
     {
         var result = new Dictionary<string, string>();
         foreach (var (hashHex, filePath) in hashToFilePath)
@@ -39,15 +44,25 @@ public sealed class OrbitBlobUploader : IDisposable
             if (result.ContainsKey(hashHex))
                 continue;
 
+            var shortHash = hashHex.Length >= 16 ? hashHex.Substring(0, 16) : hashHex;
+
             if (!File.Exists(filePath))
+            {
+                log?.Invoke($"[BlobUploader] {shortHash}… SKIP — file does not exist: {filePath}");
                 continue;
+            }
 
             try
             {
                 var bytes = await File.ReadAllBytesAsync(filePath, ct);
                 var computed = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
                 if (!string.Equals(computed, hashHex, StringComparison.OrdinalIgnoreCase))
+                {
+                    log?.Invoke(
+                        $"[BlobUploader] {shortHash}… SKIP — hash mismatch (computed " +
+                        $"{computed.Substring(0, 16)}…) file changed between extract and upload? path={filePath}");
                     continue;
+                }
 
                 using var form = new MultipartFormDataContent();
                 var fileContent = new ByteArrayContent(bytes);
@@ -57,7 +72,14 @@ public sealed class OrbitBlobUploader : IDisposable
 
                 var resp = await _http.PostAsync(_uploadUrl, form, ct);
                 if (!resp.IsSuccessStatusCode)
+                {
+                    var body = string.Empty;
+                    try { body = await resp.Content.ReadAsStringAsync(ct); } catch { }
+                    log?.Invoke(
+                        $"[BlobUploader] {shortHash}… HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} " +
+                        $"from {_uploadUrl}: {body}");
                     continue;
+                }
 
                 var json = await resp.Content.ReadAsStringAsync(ct);
                 using var doc = JsonDocument.Parse(json);
@@ -67,11 +89,23 @@ public sealed class OrbitBlobUploader : IDisposable
                     .GetString();
 
                 if (!string.IsNullOrEmpty(blobId))
+                {
                     result[hashHex] = blobId;
+                    log?.Invoke(
+                        $"[BlobUploader] {shortHash}… HTTP 200, blobId='{blobId}' ({bytes.Length}B)");
+                }
+                else
+                {
+                    log?.Invoke(
+                        $"[BlobUploader] {shortHash}… HTTP 200 but server returned empty blobId. " +
+                        $"Raw response: {json}");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip failed blobs — send continues without that texture.
+                log?.Invoke(
+                    $"[BlobUploader] {shortHash}… EXCEPTION {ex.GetType().Name}: {ex.Message} " +
+                    $"(file: {filePath})");
             }
         }
 

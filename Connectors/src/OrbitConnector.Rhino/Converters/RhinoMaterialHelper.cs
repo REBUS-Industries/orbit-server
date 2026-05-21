@@ -23,33 +23,61 @@ internal static class RhinoMaterialHelper
     /// this workstation).
     /// </para>
     /// </summary>
-    private static string? ResolveTexturePath(RenderTexture rt)
+    private static string? ResolveTexturePath(RenderTexture rt, Action<string>? log = null)
     {
-        var simTex = rt.SimulatedTexture(RenderTexture.TextureGeneration.Allow);
-        var p = simTex?.Filename;
-        return !string.IsNullOrWhiteSpace(p) && File.Exists(p) ? p : null;
+        try
+        {
+            var simTex = rt.SimulatedTexture(RenderTexture.TextureGeneration.Allow);
+            var p = simTex?.Filename;
+            var exists = !string.IsNullOrWhiteSpace(p) && File.Exists(p);
+            log?.Invoke(
+                $"      SimulatedTexture(Allow): path={(string.IsNullOrEmpty(p) ? "<null>" : p)} exists={exists}");
+            return exists ? p : null;
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"      SimulatedTexture(Allow) threw {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     public static void AttachTextures(
         RhinoObject rhinoObj,
         OrbitRenderMaterial rm,
         RhinoDoc doc,
-        IDictionary<string, string> pendingBlobFiles)
+        IDictionary<string, string> pendingBlobFiles,
+        Action<string>? log = null)
     {
         try
         {
             var mat = rhinoObj.GetMaterial(true);
-            if (mat is null) return;
+            if (mat is null)
+            {
+                log?.Invoke($"  [tex] obj {rhinoObj.Id} mat=<null>; nothing to attach");
+                return;
+            }
 
             var renderMat = mat.RenderMaterial;
             var slotsAttached = new HashSet<string>();
 
+            log?.Invoke(
+                $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' idx={mat.Index} pbr={mat.IsPhysicallyBased} " +
+                $"renderMat={(renderMat is null ? "<null>" : renderMat.TypeName)}");
+
             void AttachSlot(string slot, string path)
             {
-                if (!File.Exists(path)) return;
+                if (!File.Exists(path))
+                {
+                    log?.Invoke($"      AttachSlot SKIPPED ({slot}): file vanished at {path}");
+                    return;
+                }
                 var hashHex = Convert.ToHexString(
                     SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
-                pendingBlobFiles.TryAdd(hashHex, path);
+                var added = pendingBlobFiles.TryAdd(hashHex, path);
+                var size = new FileInfo(path).Length;
+                log?.Invoke(
+                    $"      AttachSlot OK ({slot}): hash={hashHex[..16]}… size={size}B " +
+                    $"path={path} added={added} (PendingBlobFiles={pendingBlobFiles.Count})");
                 var blobRef = $"@blob:{hashHex}";
 
                 switch (slot)
@@ -109,27 +137,47 @@ internal static class RhinoMaterialHelper
                 try
                 {
                     var child = renderMat.FirstChild;
+                    if (child is null)
+                        log?.Invoke("    [strat1 RDK] FirstChild=<null> — RDK reports no child textures");
+                    int strat1Visited = 0;
                     while (child is not null)
                     {
+                        strat1Visited++;
                         if (child is RenderTexture rt)
                         {
                             var slotName = rt.ChildSlotName ?? string.Empty;
                             var slot = ClassifySlot(slotName);
+                            log?.Invoke(
+                                $"    [strat1 RDK] child #{strat1Visited} slotName='{slotName}' classified='{slot}' " +
+                                $"already={slotsAttached.Contains(slot)}");
                             if (!slotsAttached.Contains(slot) || slot.StartsWith("other_"))
                             {
                                 try
                                 {
-                                    var p = ResolveTexturePath(rt);
+                                    var p = ResolveTexturePath(rt, log);
                                     if (!string.IsNullOrWhiteSpace(p))
                                         AttachSlot(slot, p);
+                                    else
+                                        log?.Invoke($"      [strat1 RDK] resolve returned null for slot '{slot}'");
                                 }
-                                catch { /* skip slot */ }
+                                catch (Exception ex)
+                                {
+                                    log?.Invoke($"      [strat1 RDK] AttachSlot threw {ex.GetType().Name}: {ex.Message}");
+                                }
                             }
+                        }
+                        else
+                        {
+                            log?.Invoke(
+                                $"    [strat1 RDK] child #{strat1Visited} not a RenderTexture (type={child.GetType().Name})");
                         }
                         child = child.NextSibling;
                     }
                 }
-                catch { /* RDK traversal failed */ }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"    [strat1 RDK] traversal threw {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             // Strategy 2: PhysicallyBased channel API
@@ -145,16 +193,33 @@ internal static class RhinoMaterialHelper
                 ];
                 foreach (var (texType, slot) in pbrMap)
                 {
-                    if (slotsAttached.Contains(slot)) continue;
+                    if (slotsAttached.Contains(slot))
+                    {
+                        log?.Invoke($"    [strat2 PBR] {texType} → '{slot}' SKIP (already attached)");
+                        continue;
+                    }
                     try
                     {
                         var tex = pbr.GetTexture(texType);
                         var p = tex?.FileReference?.FullPath;
-                        if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
-                            AttachSlot(slot, p);
+                        var present = !string.IsNullOrWhiteSpace(p);
+                        var exists = present && File.Exists(p!);
+                        log?.Invoke(
+                            $"    [strat2 PBR] {texType} → '{slot}' " +
+                            $"GetTexture={(tex == null ? "<null>" : "ok")} " +
+                            $"FullPath={(present ? p : "<null>")} exists={exists}");
+                        if (exists)
+                            AttachSlot(slot, p!);
                     }
-                    catch { /* skip channel */ }
+                    catch (Exception ex)
+                    {
+                        log?.Invoke($"    [strat2 PBR] {texType} threw {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
+            }
+            else
+            {
+                log?.Invoke("    [strat2 PBR] skipped — material is not PhysicallyBased");
             }
 
             // Strategy 3: legacy Bitmap (file path)
@@ -164,10 +229,18 @@ internal static class RhinoMaterialHelper
                 {
                     var tex = mat.GetTexture(TextureType.Bitmap);
                     var p = tex?.FileReference?.FullPath;
-                    if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
-                        AttachSlot("basecolor", p);
+                    var present = !string.IsNullOrWhiteSpace(p);
+                    var exists = present && File.Exists(p!);
+                    log?.Invoke(
+                        $"    [strat3 Bitmap] GetTexture={(tex == null ? "<null>" : "ok")} " +
+                        $"FullPath={(present ? p : "<null>")} exists={exists}");
+                    if (exists)
+                        AttachSlot("basecolor", p!);
                 }
-                catch { /* skip */ }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"    [strat3 Bitmap] threw {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             // Strategy 4: SimulatedMaterial fallback
@@ -183,14 +256,32 @@ internal static class RhinoMaterialHelper
                     if (simTex == null)
                         simTex = simMat?.GetTexture(TextureType.Bitmap);
                     var p = simTex?.FileReference?.FullPath;
-                    if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
-                        AttachSlot("basecolor", p);
+                    var present = !string.IsNullOrWhiteSpace(p);
+                    var exists = present && File.Exists(p!);
+                    log?.Invoke(
+                        $"    [strat4 SimMat] simMat={(simMat == null ? "<null>" : "ok")} " +
+                        $"simTex={(simTex == null ? "<null>" : "ok")} " +
+                        $"FullPath={(present ? p : "<null>")} exists={exists}");
+                    if (exists)
+                        AttachSlot("basecolor", p!);
                 }
-                catch { /* skip */ }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"    [strat4 SimMat] threw {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             if (slotsAttached.Count == 0)
+            {
+                log?.Invoke(
+                    $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' → NO TEXTURES ATTACHED " +
+                    "(all 4 strategies returned null/missing)");
                 return;
+            }
+
+            log?.Invoke(
+                $"  [tex] obj {rhinoObj.Id} mat='{mat.Name}' → attached slots: " +
+                $"[{string.Join(", ", slotsAttached)}]");
 
             // Texture-slot rescue. If RDK / PBR strategies only found a texture
             // in the "emission" slot but the Rhino material has NO genuine
@@ -218,6 +309,7 @@ internal static class RhinoMaterialHelper
                 rm.EmissiveTextureRepeat = null;
                 slotsAttached.Add("basecolor");
                 slotsAttached.Remove("emission");
+                log?.Invoke("    [rescue] promoted emission→basecolor (mat.EmissionColor is black)");
             }
 
             // Conservative emissive handling: only mark the material as glowing
@@ -247,9 +339,9 @@ internal static class RhinoMaterialHelper
                 rm.Metalness = pbr.Metallic;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Texture attachment is best-effort.
+            log?.Invoke($"  [tex] obj {rhinoObj.Id} AttachTextures top-level threw {ex.GetType().Name}: {ex.Message}");
         }
     }
 }
