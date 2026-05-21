@@ -267,9 +267,23 @@ public class RhinoSendPipeline
                 // can read material/colour off the object's attributes.
                 context.CurrentObject = obj;
 
+                // ── PER-SOURCE diagnostic ──
+                // Log every Rhino object we feed into the conversion pipeline
+                // with its native type, layer, and bounding-box dimensions so
+                // a flat / degenerate source ("bbox 12x8x0") shows up in the
+                // log and can be correlated to the corresponding ORBIT object
+                // id rendered in the viewer.
+                context.Log?.Invoke(
+                    $"[ORBIT-OBJ] source id={obj.Id} type={DescribeRhinoObject(obj)} " +
+                    $"layer='{layer.FullPath}' bbox={DescribeBBox(obj)}");
+
                 var converted = ConvertWithFallback(obj, context);
                 context.CurrentObject = null;
-                if (converted == null) continue;
+                if (converted == null)
+                {
+                    context.Log?.Invoke($"[ORBIT-OBJ]   → converter returned null (skipped)");
+                    continue;
+                }
 
                 converted.ApplicationId = obj.Id.ToString();
                 TagWithLayerInfo(converted, layer.FullPath, layerColor);
@@ -291,14 +305,20 @@ public class RhinoSendPipeline
                 //       ├── Extrusion …
                 if (converted is OM.Instance inst && inst.Elements is { Count: > 0 } members)
                 {
-                    foreach (var member in members)
+                    context.Log?.Invoke(
+                        $"[ORBIT-OBJ]   → Instance expanded into {members.Count} members " +
+                        "(wrapper dropped, members appended to layer collection)");
+                    for (int i = 0; i < members.Count; i++)
                     {
+                        var member = members[i];
                         // Members inherit the layer's path/colour for the
                         // sidebar (they no longer have an instance parent to
                         // group them). Their own renderMaterial / per-mesh
                         // layer colour set inside the wrapper is unchanged.
                         TagWithLayerInfo(member, layer.FullPath, layerColor);
                         layerCollection.Elements.Add(member);
+                        context.Log?.Invoke(
+                            $"[ORBIT-OBJ]     member[{i}] {DescribeConverted(member)}");
                     }
                     // Drop the Instance wrapper itself — round-trip metadata
                     // (definitionId / transform) lives on the
@@ -308,6 +328,7 @@ public class RhinoSendPipeline
                 else
                 {
                     layerCollection.Elements.Add(converted);
+                    context.Log?.Invoke($"[ORBIT-OBJ]   → {DescribeConverted(converted)}");
                 }
             }
 
@@ -393,6 +414,97 @@ public class RhinoSendPipeline
     /// sign-bit mismatch that would otherwise produce wrong colours in the viewer.
     /// </summary>
     private static long ArgbToUnsignedLong(int argb) => (long)(uint)argb;
+
+    /// <summary>
+    /// Short native-Rhino type label for <see cref="RhinoObject"/> — picks a
+    /// granular tag (Brep, Extrusion, SubD, InstanceObject, Mesh, …) so the
+    /// per-source diagnostic line is grep-friendly.
+    /// </summary>
+    private static string DescribeRhinoObject(RhinoObject obj)
+    {
+        if (obj is InstanceObject) return "InstanceObject";
+        var g = obj.Geometry;
+        return g switch
+        {
+            Brep                          => "Brep",
+            Extrusion                     => "Extrusion",
+            SubD                          => "SubD",
+            Surface                       => "Surface",
+            global::Rhino.Geometry.Mesh   => "Mesh",
+            Curve                         => "Curve",
+            PointCloud                    => "PointCloud",
+            Point                         => "Point",
+            InstanceReferenceGeometry     => "InstanceReference",
+            null                          => "<no geometry>",
+            _                             => g.GetType().Name,
+        };
+    }
+
+    /// <summary>
+    /// Source bounding-box dimensions in the doc's units, formatted to a
+    /// stable "WxHxD" string. A flat plane shows up as e.g. "12.0x8.0x0.0"
+    /// which makes degenerate / planar sources trivial to spot in the log.
+    /// </summary>
+    private static string DescribeBBox(RhinoObject obj)
+    {
+        try
+        {
+            var bb = obj.Geometry?.GetBoundingBox(accurate: false) ?? BoundingBox.Empty;
+            if (!bb.IsValid) return "<invalid>";
+            var d = bb.Diagonal;
+            return $"{d.X:F2}x{d.Y:F2}x{d.Z:F2}";
+        }
+        catch (Exception ex)
+        {
+            return $"<bbox-err {ex.GetType().Name}>";
+        }
+    }
+
+    /// <summary>
+    /// Brief description of a converted ORBIT object — its runtime type, the
+    /// applicationId (source Rhino GUID for correlation), and per-displayValue
+    /// vertex/face counts. Lets us match the "extra flat planes" reported in
+    /// the viewer back to specific source RhinoObjects and tells us whether
+    /// a Brep wrapper exploded into N display-mesh fragments (one of the two
+    /// likely causes of the 8→13 expansion in v0.1.14).
+    /// </summary>
+    private static string DescribeConverted(OrbitBase converted)
+    {
+        var typeName = converted.GetType().Name;
+        var appId = converted.ApplicationId is { Length: > 0 } id ? id : "<no-appId>";
+
+        var dv = ExtractDisplayValue(converted);
+        if (dv == null || dv.Count == 0)
+            return $"type={typeName} appId={appId} dv=0";
+
+        var sb = new System.Text.StringBuilder(96);
+        sb.Append("type=").Append(typeName)
+          .Append(" appId=").Append(appId)
+          .Append(" dv=").Append(dv.Count);
+        // Cap per-line detail at 5 fragments so a runaway Brep with hundreds
+        // of faces doesn't produce a 10kB log line.
+        for (int i = 0; i < dv.Count && i < 5; i++)
+        {
+            var m = dv[i];
+            sb.Append(" dv[").Append(i).Append("]=v=").Append(m?.VertexCount ?? 0)
+              .Append(",f=").Append(m?.Faces?.Count ?? 0);
+        }
+        if (dv.Count > 5) sb.Append(" …");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the converted object's <c>displayValue</c> list when it has
+    /// one, or wraps a single <see cref="OM.Mesh"/> leaf so the per-object
+    /// describer has one uniform shape to print.
+    /// </summary>
+    private static List<OM.Mesh>? ExtractDisplayValue(OrbitBase converted) => converted switch
+    {
+        RhinoDataObject wrap => wrap.DisplayValue,
+        OM.Mesh leaf         => new List<OM.Mesh> { leaf },
+        OM.Brep brep         => brep.DisplayValue,
+        _                    => null,
+    };
 
     /// <summary>
     /// Set <c>layerPath</c>, <c>layerColor</c>, and <c>colorSource</c> on a
