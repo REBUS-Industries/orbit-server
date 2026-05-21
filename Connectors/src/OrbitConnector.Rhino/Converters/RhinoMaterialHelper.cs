@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Rhino;
 using Rhino.DocObjects;
 using Rhino.Render;
+using DocTexture = Rhino.DocObjects.Texture;
 using OrbitRenderMaterial = Orbit.Objects.Other.RenderMaterial;
 
 namespace OrbitConnector.Rhino.Converters;
@@ -133,6 +134,84 @@ internal static class RhinoMaterialHelper
         catch (Exception ex)
         {
             log?.Invoke($"      [resolve#3 SaveAsImage] outer threw {ex.GetType().Name}: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolve a <see cref="DocTexture"/> (returned by
+    /// <c>Material.PhysicallyBased.GetTexture()</c>, <c>Material.GetTexture()</c>
+    /// or <c>SimulatedMaterial.GetTexture()</c>) to a file path on disk.
+    /// <para>
+    /// Fast path: <c>FileReference.FullPath</c> when the artist-specified path
+    /// still exists on the workstation.
+    /// </para>
+    /// <para>
+    /// Embedded-texture fallback (v0.1.19): if the file path is missing or
+    /// stale (e.g. the original lived in a Dropbox folder the workstation
+    /// never had), look up the underlying <see cref="RenderTexture"/> by
+    /// <see cref="DocTexture.Id"/> via
+    /// <see cref="RenderContent.FromId(RhinoDoc, Guid)"/> and route it through
+    /// <see cref="ResolveTexturePath"/>, which contains the
+    /// <c>SaveAsImage</c> path that materialises the .3dm-embedded bitmap to
+    /// a PNG under <see cref="EmbeddedTextureCacheDir"/>.
+    /// </para>
+    /// <para>
+    /// The PBR / Bitmap / SimMat strategies could not previously trigger the
+    /// SaveAsImage fallback because it only existed in
+    /// <see cref="ResolveTexturePath"/> and those strategies never went
+    /// through it — they only checked <c>tex.FileReference.FullPath</c>
+    /// directly.
+    /// </para>
+    /// </summary>
+    private static string? ResolveDocTextureWithFallback(
+        RhinoDoc doc,
+        DocTexture? tex,
+        string strategyTag,
+        Action<string>? log)
+    {
+        if (tex == null) return null;
+
+        var p = tex.FileReference?.FullPath;
+        if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
+            return p;
+
+        if (tex.Id == Guid.Empty)
+        {
+            log?.Invoke($"      [{strategyTag} fallback] tex.Id=Guid.Empty — no RenderContent to look up");
+            return null;
+        }
+
+        try
+        {
+            var content = RenderContent.FromId(doc, tex.Id);
+            if (content is not RenderTexture rt)
+            {
+                log?.Invoke(
+                    $"      [{strategyTag} fallback] RenderContent.FromId({tex.Id})=" +
+                    $"{(content == null ? "<null>" : content.GetType().Name)} — cannot SaveAsImage");
+                return null;
+            }
+
+            log?.Invoke(
+                $"      [{strategyTag} fallback] found RenderTexture by Id={tex.Id} — attempting SaveAsImage via ResolveTexturePath");
+            var resolved = ResolveTexturePath(rt, log);
+            if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
+            {
+                long bytes = new FileInfo(resolved).Length;
+                log?.Invoke(
+                    $"      [{strategyTag} fallback] SaveAsImage → wrote {bytes} bytes to {resolved}");
+                return resolved;
+            }
+
+            log?.Invoke(
+                $"      [{strategyTag} fallback] SaveAsImage failed (ResolveTexturePath returned null/missing)");
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke(
+                $"      [{strategyTag} fallback] threw {ex.GetType().Name}: {ex.Message}");
         }
 
         return null;
@@ -306,7 +385,19 @@ internal static class RhinoMaterialHelper
                             $"GetTexture={(tex == null ? "<null>" : "ok")} " +
                             $"FullPath={(present ? p : "<null>")} exists={exists}");
                         if (exists)
+                        {
                             AttachSlot(slot, p!);
+                        }
+                        else if (tex != null)
+                        {
+                            // FullPath was missing or stale (e.g. artist's Dropbox
+                            // folder not on workstation). The .3dm may still embed
+                            // the bitmap — try SaveAsImage on the underlying
+                            // RenderTexture (v0.1.19 fix).
+                            var rescued = ResolveDocTextureWithFallback(doc, tex, $"strat2 PBR {texType}", log);
+                            if (!string.IsNullOrWhiteSpace(rescued))
+                                AttachSlot(slot, rescued!);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -332,7 +423,15 @@ internal static class RhinoMaterialHelper
                         $"    [strat3 Bitmap] GetTexture={(tex == null ? "<null>" : "ok")} " +
                         $"FullPath={(present ? p : "<null>")} exists={exists}");
                     if (exists)
+                    {
                         AttachSlot("basecolor", p!);
+                    }
+                    else if (tex != null)
+                    {
+                        var rescued = ResolveDocTextureWithFallback(doc, tex, "strat3 Bitmap", log);
+                        if (!string.IsNullOrWhiteSpace(rescued))
+                            AttachSlot("basecolor", rescued!);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -347,7 +446,7 @@ internal static class RhinoMaterialHelper
                 {
                     var simMat = renderMat.ToMaterial(
                         RenderTexture.TextureGeneration.Allow);
-                    global::Rhino.DocObjects.Texture? simTex = null;
+                    DocTexture? simTex = null;
                     if (mat.IsPhysicallyBased && simMat?.IsPhysicallyBased == true)
                         simTex = simMat.PhysicallyBased?.GetTexture(TextureType.PBR_BaseColor);
                     if (simTex == null)
@@ -360,7 +459,15 @@ internal static class RhinoMaterialHelper
                         $"simTex={(simTex == null ? "<null>" : "ok")} " +
                         $"FullPath={(present ? p : "<null>")} exists={exists}");
                     if (exists)
+                    {
                         AttachSlot("basecolor", p!);
+                    }
+                    else if (simTex != null)
+                    {
+                        var rescued = ResolveDocTextureWithFallback(doc, simTex, "strat4 SimMat", log);
+                        if (!string.IsNullOrWhiteSpace(rescued))
+                            AttachSlot("basecolor", rescued!);
+                    }
                 }
                 catch (Exception ex)
                 {

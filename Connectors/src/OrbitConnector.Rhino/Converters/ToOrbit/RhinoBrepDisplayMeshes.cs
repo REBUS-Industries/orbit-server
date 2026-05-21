@@ -20,6 +20,15 @@ internal static class RhinoBrepDisplayMeshes
     /// Prefers Rhino's cached render meshes (matches viewport + working Speckle
     /// connector), then per-face tessellation, then whole-Brep tessellation.
     /// </summary>
+    /// <remarks>
+    /// <see cref="RhinoObject.GetMeshes(MeshType)"/> returns the array of
+    /// per-face render meshes (one entry per Brep face when faces have
+    /// independent mesh parameters or materials). The interactive Rhino
+    /// viewport — and the working ORBIT plug-in — append those into a single
+    /// mesh before sending. Without this, a polysurface arrives at the
+    /// receiver as N independent <c>displayValue</c> meshes that the viewer
+    /// then renders as visually disconnected fragments.
+    /// </remarks>
     public static IReadOnlyList<Mesh> Extract(Brep brep, ConversionContext context)
     {
         var rhinoObj = context.CurrentObject;
@@ -28,11 +37,23 @@ internal static class RhinoBrepDisplayMeshes
             var renderMeshes = rhinoObj.GetMeshes(MeshType.Render);
             if (renderMeshes is { Length: > 0 })
             {
-                var fromRender = renderMeshes
+                var nonEmpty = renderMeshes
                     .Where(m => m != null && m.Vertices.Count > 0)
                     .ToList();
-                if (fromRender.Count > 0)
-                    return fromRender;
+                if (nonEmpty.Count == 1)
+                    return nonEmpty;
+                if (nonEmpty.Count > 1)
+                {
+                    var merged = new Mesh();
+                    foreach (var m in nonEmpty)
+                        merged.Append(m);
+                    if (merged.Vertices.Count > 0)
+                    {
+                        context.Log?.Invoke(
+                            $"[ORBIT-DIAG] merged {nonEmpty.Count} render meshes for Brep {rhinoObj.Id} into 1");
+                        return new List<Mesh> { merged };
+                    }
+                }
             }
         }
 
