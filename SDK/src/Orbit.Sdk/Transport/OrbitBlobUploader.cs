@@ -28,6 +28,8 @@ public sealed class OrbitBlobUploader : IDisposable
     /// Upload every unique file in <paramref name="hashToFilePath"/>.
     /// Keys are lowercase SHA-256 hex digests of file bytes.
     /// </summary>
+    /// <param name="hashToFilePath">SHA-256 hex digest → absolute file path of the texture image to upload.</param>
+    /// <param name="ct">Cancellation token.</param>
     /// <param name="log">
     /// Optional diagnostic sink. Receives one line per upload attempt with
     /// status (200/non-success/exception) and the assigned server blob id.
