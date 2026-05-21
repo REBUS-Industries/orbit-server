@@ -14,31 +14,128 @@ namespace OrbitConnector.Rhino.Converters;
 internal static class RhinoMaterialHelper
 {
     /// <summary>
+    /// Process-wide temp dir used by the <c>SaveAsImage</c> fallback in
+    /// <see cref="ResolveTexturePath"/>. Files written here are kept until
+    /// the pipeline finishes uploading them as blobs; the OS cleans the temp
+    /// root on a schedule so we do not need an aggressive sweeper.
+    /// </summary>
+    private static readonly string EmbeddedTextureCacheDir =
+        Path.Combine(Path.GetTempPath(), "PRISM.Agent", "tex-cache");
+
+    /// <summary>
     /// Resolve a texture file path from a <see cref="RenderTexture"/>.
     /// <para>
-    /// Calls <c>SimulatedTexture(Allow)</c> which causes Rhino to extract any
-    /// embedded texture to its temp cache and return the full path. Returns
-    /// <c>null</c> when the resulting path is empty or inaccessible (e.g.
-    /// file-referenced textures whose source machine path does not exist on
-    /// this workstation).
+    /// Tries three strategies in order:
     /// </para>
+    /// <list type="number">
+    ///   <item>
+    ///     <c>SimulatedTexture(Allow).Filename</c> — Rhino's file cache.
+    ///     Works for file-referenced textures and for embedded textures whose
+    ///     SimulatedTexture entry has already been hydrated by the interactive
+    ///     viewport. Returns <c>null</c> in PRISM headless mode for embedded
+    ///     textures (the v0.1.14 failure mode).
+    ///   </item>
+    ///   <item>
+    ///     <c>RenderContent.Filename</c> — the source path declared by the
+    ///     texture content. Covers file-referenced textures whose simulated
+    ///     cache entry is missing but whose original path exists on disk.
+    ///   </item>
+    ///   <item>
+    ///     <c>RenderTexture.SaveAsImage(path, w, h, depth)</c> (Rhino 6.15+) —
+    ///     explicitly materialises the texture (embedded blob or procedural)
+    ///     into a PNG under <see cref="EmbeddedTextureCacheDir"/>. This is the
+    ///     headless workaround that the ORBIT plug-in does not need (RDK keeps
+    ///     its texture cache warm in interactive Rhino).
+    ///   </item>
+    /// </list>
     /// </summary>
     private static string? ResolveTexturePath(RenderTexture rt, Action<string>? log = null)
     {
+        // Strategy 1: Rhino's SimulatedTexture cache (file-referenced + already-
+        // hydrated embedded textures).
         try
         {
             var simTex = rt.SimulatedTexture(RenderTexture.TextureGeneration.Allow);
             var p = simTex?.Filename;
             var exists = !string.IsNullOrWhiteSpace(p) && File.Exists(p);
             log?.Invoke(
-                $"      SimulatedTexture(Allow): path={(string.IsNullOrEmpty(p) ? "<null>" : p)} exists={exists}");
-            return exists ? p : null;
+                $"      [resolve#1 SimulatedTexture(Allow)] path={(string.IsNullOrEmpty(p) ? "<null>" : p)} exists={exists}");
+            if (exists) return p;
         }
         catch (Exception ex)
         {
-            log?.Invoke($"      SimulatedTexture(Allow) threw {ex.GetType().Name}: {ex.Message}");
-            return null;
+            log?.Invoke($"      [resolve#1 SimulatedTexture(Allow)] threw {ex.GetType().Name}: {ex.Message}");
         }
+
+        // Strategy 2: RenderContent.Filename — declared source path of a
+        // file-based texture. (Rhino 7.4+, inherited via RenderContent.)
+        try
+        {
+            var fn = rt.Filename;
+            var exists = !string.IsNullOrWhiteSpace(fn) && File.Exists(fn);
+            log?.Invoke(
+                $"      [resolve#2 RenderContent.Filename] path={(string.IsNullOrEmpty(fn) ? "<null>" : fn)} exists={exists}");
+            if (exists) return fn;
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"      [resolve#2 RenderContent.Filename] threw {ex.GetType().Name}: {ex.Message}");
+        }
+
+        // Strategy 3: SaveAsImage — write the texture (embedded or procedural)
+        // to a temp PNG. This is the embedded-texture fallback that fixes the
+        // PRISM headless texture-loss bug (v0.1.16 / Fix 3).
+        //
+        // SaveAsImage was renamed from the never-existed `WriteImageFile` we
+        // tried in v0.1.11 (and which failed to compile). Signature confirmed
+        // against RhinoCommon 8.31 XML doc:
+        //     bool SaveAsImage(string FullPath, int width, int height, int depth)
+        // available since Rhino 6.15.
+        try
+        {
+            int width = 1024, height = 1024, depth = 0;
+            try
+            {
+                rt.PixelSize(out width, out height, out depth);
+                if (width <= 0) width = 1024;
+                if (height <= 0) height = 1024;
+            }
+            catch (Exception sizeEx)
+            {
+                log?.Invoke(
+                    $"      [resolve#3 SaveAsImage] PixelSize threw {sizeEx.GetType().Name}; defaulting to 1024x1024");
+            }
+
+            Directory.CreateDirectory(EmbeddedTextureCacheDir);
+            var outPath = Path.Combine(EmbeddedTextureCacheDir, $"{Guid.NewGuid():N}.png");
+
+            bool ok;
+            try
+            {
+                ok = rt.SaveAsImage(outPath, width, height, depth);
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"      [resolve#3 SaveAsImage] threw {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+
+            var fi = File.Exists(outPath) ? new FileInfo(outPath) : null;
+            var present = ok && fi is { Length: > 0 };
+            log?.Invoke(
+                $"      [resolve#3 SaveAsImage] {width}x{height}x{depth} ok={ok} size={(fi?.Length ?? 0)}B " +
+                $"path={outPath} usable={present}");
+            if (present) return outPath;
+
+            // Clean up zero-byte output so we do not accumulate junk.
+            try { if (File.Exists(outPath)) File.Delete(outPath); } catch { /* best-effort */ }
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"      [resolve#3 SaveAsImage] outer threw {ex.GetType().Name}: {ex.Message}");
+        }
+
+        return null;
     }
 
     public static void AttachTextures(
