@@ -36,20 +36,54 @@ internal static class RhinoObjectMeshes
         foreach (var mt in MeshTypes)
         {
             var meshes = rhinoObj.GetMeshes(mt);
-            var nonEmpty = FilterNonEmpty(meshes);
-            if (nonEmpty.Count == 1)
-                return nonEmpty;
-            if (nonEmpty.Count > 1)
+            // Warm the cache once on Render — PRISM's headless agent never
+            // paints a viewport so the renderer hasn't baked the meshes yet.
+            // The bake also gives RhinoCommon a chance to apply the object's
+            // TextureMapping while it tessellates (mirrors the fix in
+            // RhinoBrepDisplayMeshes.TryGetRenderMeshes).
+            if ((meshes == null || meshes.Length == 0) && mt == MeshType.Render)
             {
-                var merged = new Mesh();
-                foreach (var m in nonEmpty)
-                    merged.Append(m);
-                if (merged.Vertices.Count > 0)
+                try
+                {
+                    rhinoObj.CreateMeshes(
+                        MeshType.Render,
+                        RhinoBrepDisplayMeshes.TessellationParameters,
+                        ignoreCustomParameters: false);
+                    meshes = rhinoObj.GetMeshes(MeshType.Render);
+                    context.Log?.Invoke(
+                        $"[ORBIT-UV] warmed render-mesh cache for obj={rhinoObj.Id} → {meshes?.Length ?? 0} mesh(es) (ExtractFromObject)");
+                }
+                catch (Exception ex)
                 {
                     context.Log?.Invoke(
-                        $"[ORBIT-DIAG] merged {nonEmpty.Count} object render meshes for {rhinoObj.Id} into 1");
-                    return new List<Mesh> { merged };
+                        $"[ORBIT-UV] CreateMeshes(Render) threw for obj={rhinoObj.Id} (ExtractFromObject): {ex.GetType().Name}: {ex.Message}");
                 }
+            }
+            var nonEmpty = FilterNonEmpty(meshes);
+            if (nonEmpty.Count >= 1)
+            {
+                Mesh result;
+                if (nonEmpty.Count == 1)
+                {
+                    result = nonEmpty[0];
+                }
+                else
+                {
+                    var merged = new Mesh();
+                    foreach (var m in nonEmpty)
+                        merged.Append(m);
+                    if (merged.Vertices.Count == 0)
+                        continue;
+                    context.Log?.Invoke(
+                        $"[ORBIT-DIAG] merged {nonEmpty.Count} object render meshes for {rhinoObj.Id} into 1");
+                    result = merged;
+                }
+
+                // Bake TextureMapping → UVs so the receiver sees the same
+                // texture placement Rhino's viewport renders. No-op when the
+                // object has no mapping (surface-parameter UVs intended).
+                RhinoMeshUvMapping.ApplyMapping(result, rhinoObj, context, $"object-{mt}");
+                return new List<Mesh> { result };
             }
         }
 

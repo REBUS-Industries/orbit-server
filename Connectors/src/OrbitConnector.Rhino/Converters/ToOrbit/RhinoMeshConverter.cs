@@ -77,9 +77,14 @@ public class RhinoMeshConverter : IRhinoToOrbitConverter
     public static void CopyTextureCoordinates(
         Mesh rhinoMesh, OM.Mesh mesh, ConversionContext context)
     {
+        var objIdStr = context.CurrentObject?.Id.ToString() ?? "<no-obj>";
+
         if (TryExtractUvs(rhinoMesh, out var uvs))
         {
             mesh.TextureCoordinates = uvs;
+            context.Log?.Invoke(
+                $"[ORBIT-UV] OrbitMesh.textureCoordinates ← rhinoMesh " +
+                $"(obj={objIdStr}, uvCount={uvs.Count / 2}, vCount={rhinoMesh.Vertices.Count})");
             return;
         }
 
@@ -88,11 +93,28 @@ public class RhinoMeshConverter : IRhinoToOrbitConverter
 
         var renderMeshes = obj.GetMeshes(MeshType.Render);
         if (renderMeshes == null || renderMeshes.Length == 0 || renderMeshes[0] == null)
+        {
+            context.Log?.Invoke(
+                $"[ORBIT-UV] no UVs to copy for obj={objIdStr} " +
+                $"(rhinoMesh.TC={rhinoMesh.TextureCoordinates.Count}, " +
+                $"rhinoMesh.V={rhinoMesh.Vertices.Count}, render meshes unavailable)");
             return;
+        }
 
         var rm = renderMeshes[0];
         if (TryExtractUvs(rm, out uvs))
+        {
             mesh.TextureCoordinates = uvs;
+            context.Log?.Invoke(
+                $"[ORBIT-UV] OrbitMesh.textureCoordinates ← render-mesh fallback " +
+                $"(obj={objIdStr}, uvCount={uvs.Count / 2}, rmV={rm.Vertices.Count})");
+        }
+        else
+        {
+            context.Log?.Invoke(
+                $"[ORBIT-UV] render-mesh fallback also empty for obj={objIdStr} " +
+                $"(rmTC={rm.TextureCoordinates.Count}, rmV={rm.Vertices.Count})");
+        }
     }
 
     private static bool TryExtractUvs(Mesh rhinoMesh, out List<double> uvs)

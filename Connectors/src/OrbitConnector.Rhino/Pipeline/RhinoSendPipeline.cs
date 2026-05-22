@@ -78,6 +78,10 @@ public class RhinoSendPipeline
         Diag($"[ORBIT-DIAG] SendAsync start: card type={card.Type} mode={card.LayerMode} " +
              $"project={card.ProjectId} model={card.ModelId} docObjects={doc.Objects.Count}");
 
+        // Reset the per-job doc probe so it fires once per conversion (instead
+        // of once per agent process lifetime).
+        Converters.RhinoMaterialHelper.ResetDocProbe();
+
         progress?.Report(("Extracting objects…", 0));
         var context = new ConversionContext(doc);
         context.Log = Diag;
