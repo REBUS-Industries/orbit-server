@@ -177,7 +177,17 @@ public class RhinoSendPipeline
             totalChildrenCount: objectBatch.Count,
             ct);
 
-        progress?.Report(("Done", 100));
+        // Intentionally do NOT report ("Done", 100) here. progress is a
+        // System.Progress<T>, which posts callbacks to the captured
+        // SynchronizationContext (== thread-pool for a service host) and
+        // runs them fire-and-forget. The PRISM agent immediately awaits a
+        // synchronous SendAsync(MessageType.Complete, ...) once we return,
+        // and that Complete frame wins the race to the wire. A late "Done"
+        // progress arriving after Complete makes the server's progress
+        // handler downgrade status: 'complete' -> 'processing' and stage
+        // 'complete' -> 'Done', leaving the row stuck in the admin UI even
+        // though result_url, outputs and completed_at are populated.
+        // (Server has a defensive guard for this too in agentProtocol.ts.)
         return version.Id!;
     }
 
