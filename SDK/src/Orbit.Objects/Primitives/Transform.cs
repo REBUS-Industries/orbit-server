@@ -9,6 +9,8 @@ namespace Orbit.Objects.Primitives;
 /// </summary>
 public class Transform : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Other.Transform";
+
     /// <summary>Flat 16-element column-major matrix values.</summary>
     [JsonProperty("matrix")]
     public double[]? Matrix { get; set; }

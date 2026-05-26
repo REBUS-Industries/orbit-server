@@ -4,6 +4,8 @@ namespace Orbit.Objects.Primitives;
 
 public class Vector3d : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Vector";
+
     [JsonProperty("x")] public double X { get; set; }
     [JsonProperty("y")] public double Y { get; set; }
     [JsonProperty("z")] public double Z { get; set; }

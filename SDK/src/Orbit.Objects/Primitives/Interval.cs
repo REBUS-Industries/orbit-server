@@ -4,6 +4,8 @@ namespace Orbit.Objects.Primitives;
 
 public class Interval : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Primitive.Interval";
+
     [JsonProperty("start")] public double Start { get; set; }
     [JsonProperty("end")]   public double End   { get; set; }
 

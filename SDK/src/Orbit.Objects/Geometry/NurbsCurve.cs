@@ -4,6 +4,13 @@ namespace Orbit.Objects.Geometry;
 
 public class NurbsCurve : Base.OrbitBase
 {
+    // Speckle viewer dispatch (see SpeckleConverter.NodeConverterMapping)
+    // expects "Curve" as the final segment for NURBS-style curves. Naming
+    // this "Objects.Geometry.NurbsCurve" still works (getSpeckleTypeChain
+    // strips namespace prefixes), but the canonical Speckle wire type is
+    // "Objects.Geometry.Curve" — keep that for cross-tool compatibility.
+    public override string OrbitType => "Objects.Geometry.Curve";
+
     [JsonProperty("degree")]     public int Degree    { get; set; }
     [JsonProperty("periodic")]   public bool Periodic  { get; set; }
     [JsonProperty("rational")]   public bool Rational  { get; set; }

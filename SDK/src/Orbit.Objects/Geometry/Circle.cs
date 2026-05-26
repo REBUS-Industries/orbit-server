@@ -4,6 +4,8 @@ namespace Orbit.Objects.Geometry;
 
 public class Circle : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Circle";
+
     [JsonProperty("radius")] public double Radius { get; set; }
     [JsonProperty("plane")]  public Plane? Plane  { get; set; }
     [JsonProperty("domain")] public Primitives.Interval? Domain { get; set; }

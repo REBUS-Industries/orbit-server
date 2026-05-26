@@ -4,6 +4,8 @@ namespace Orbit.Objects.Geometry;
 
 public class PointCloud : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Pointcloud";
+
     /// <summary>Flat point array: x0,y0,z0, x1,y1,z1, ...</summary>
     [JsonProperty("points")]  public List<double>? Points  { get; set; }
     /// <summary>Per-point colour as ARGB int. Optional.</summary>

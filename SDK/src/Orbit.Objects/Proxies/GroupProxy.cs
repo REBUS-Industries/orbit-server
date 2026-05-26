@@ -4,6 +4,8 @@ namespace Orbit.Objects.Proxies;
 
 public class GroupProxy : Base.OrbitBase
 {
+    public override string OrbitType => "Speckle.Core.Models.Proxies.GroupProxy";
+
     [JsonProperty("name")]      public string? Name      { get; set; }
     /// <summary>applicationIds of objects that belong to this group.</summary>
     [JsonProperty("objectIds")] public List<string>? ObjectIds { get; set; }

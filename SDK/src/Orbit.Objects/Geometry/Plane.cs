@@ -4,6 +4,8 @@ namespace Orbit.Objects.Geometry;
 
 public class Plane : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Plane";
+
     [JsonProperty("origin")] public Point? Origin { get; set; }
     [JsonProperty("normal")] public Primitives.Vector3d? Normal { get; set; }
     [JsonProperty("xdir")]   public Primitives.Vector3d? Xdir   { get; set; }

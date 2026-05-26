@@ -8,6 +8,8 @@ namespace Orbit.Objects.Geometry;
 /// </summary>
 public class PolyCurve : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Polycurve";
+
     [JsonProperty("segments")]    public List<Base.OrbitBase>? Segments { get; set; }
     [JsonProperty("closed")]      public bool Closed  { get; set; }
     [JsonProperty("domain")]      public Primitives.Interval? Domain { get; set; }

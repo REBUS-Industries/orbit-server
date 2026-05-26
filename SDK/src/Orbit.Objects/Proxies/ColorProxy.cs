@@ -4,6 +4,8 @@ namespace Orbit.Objects.Proxies;
 
 public class ColorProxy : Base.OrbitBase
 {
+    public override string OrbitType => "Speckle.Core.Models.Proxies.ColorProxy";
+
     /// <summary>Colour as ARGB int.</summary>
     [JsonProperty("value")]
     public int Value { get; set; }

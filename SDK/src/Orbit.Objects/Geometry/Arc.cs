@@ -4,6 +4,8 @@ namespace Orbit.Objects.Geometry;
 
 public class Arc : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Arc";
+
     [JsonProperty("radius")]      public double Radius     { get; set; }
     [JsonProperty("startAngle")]  public double StartAngle { get; set; }
     [JsonProperty("endAngle")]    public double EndAngle   { get; set; }

@@ -10,6 +10,8 @@ namespace Orbit.Objects.Proxies;
 /// </summary>
 public class DefinitionProxy : Base.OrbitBase
 {
+    public override string OrbitType => "Speckle.Core.Models.Instances.InstanceDefinitionProxy";
+
     [JsonProperty("name")]
     public string? Name { get; set; }
 

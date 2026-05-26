@@ -4,6 +4,8 @@ namespace Orbit.Objects.Geometry;
 
 public class Surface : Base.OrbitBase
 {
+    public override string OrbitType => "Objects.Geometry.Surface";
+
     [JsonProperty("degreeU")]   public int DegreeU   { get; set; }
     [JsonProperty("degreeV")]   public int DegreeV   { get; set; }
     [JsonProperty("rational")]  public bool Rational  { get; set; }

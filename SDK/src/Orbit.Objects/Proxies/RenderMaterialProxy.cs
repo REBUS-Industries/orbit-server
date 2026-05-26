@@ -18,6 +18,8 @@ namespace Orbit.Objects.Proxies;
 /// </summary>
 public class RenderMaterialProxy : Base.OrbitBase
 {
+    public override string OrbitType => "Speckle.Core.Models.Proxies.RenderMaterialProxy";
+
     /// <summary>The material definition.</summary>
     [JsonProperty("value")]
     public RenderMaterial? Value { get; set; }
