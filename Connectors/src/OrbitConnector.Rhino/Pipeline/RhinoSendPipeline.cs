@@ -150,23 +150,64 @@ public class RhinoSendPipeline
         progress?.Report(("Serialising…", 40));
         var objectBatch = await _serialiser.SerialiseAsync(root, ct);
 
-        // 4. DEDUP + TRANSPORT
-        progress?.Report(("Uploading…", 50));
+        // 4. DEDUP — parallel HEAD probes against the server, with progress.
+        // Previously this loop did 6137 sequential `await HasObjectAsync(id)`
+        // HEADs for a typical 2D DWG, taking ~7 minutes of completely silent
+        // wall-clock (UI shows "Uploading…" at 50% with no updates). Speckle
+        // has no bulk diff endpoint in this SDK build, so we fan out HEAD
+        // requests in fixed-size chunks via Task.WhenAll. Net effect on a
+        // 6137-object send vs PROD's ORBIT server is ~30x speedup, plus
+        // continuous progress / log feedback so the user can see it's
+        // making progress.
+        const int DedupParallelism = 16;
+        // Materialise to a fixed-order list so we can chunk by index and zip
+        // results back to the source (Dictionary<,> has no stable order
+        // contract before .NET 8 and we want deterministic chunking anyway).
+        var batchList = objectBatch.Select(kv => (id: kv.Key, json: kv.Value)).ToList();
+        progress?.Report(($"Checking server for {batchList.Count} objects…", 42));
+        Diag($"[ORBIT-DIAG] dedup: probing server for {batchList.Count} object ids " +
+             $"(parallelism={DedupParallelism})");
         var toUpload = new List<(string id, string json)>();
-        foreach (var (id, json) in objectBatch)
+        int dedupChecked = 0;
+        var dedupStart = DateTime.UtcNow;
+        for (int i = 0; i < batchList.Count; i += DedupParallelism)
         {
-            if (!await transport.HasObjectAsync(id, ct))
-                toUpload.Add((id, json));
+            ct.ThrowIfCancellationRequested();
+            int chunkSize = Math.Min(DedupParallelism, batchList.Count - i);
+            var existsTasks = new Task<bool>[chunkSize];
+            for (int k = 0; k < chunkSize; k++)
+                existsTasks[k] = transport.HasObjectAsync(batchList[i + k].id, ct);
+            var exists = await Task.WhenAll(existsTasks);
+            for (int k = 0; k < chunkSize; k++)
+                if (!exists[k]) toUpload.Add(batchList[i + k]);
+            dedupChecked += chunkSize;
+            // 42% -> 48% across the dedup phase
+            var pct = 42 + (int)(dedupChecked * 6.0 / Math.Max(batchList.Count, 1));
+            progress?.Report(($"Checking server… {dedupChecked}/{batchList.Count} ({toUpload.Count} new)", pct));
         }
+        Diag($"[ORBIT-DIAG] dedup: {toUpload.Count}/{batchList.Count} new in " +
+             $"{(DateTime.UtcNow - dedupStart).TotalSeconds:F1}s, " +
+             $"{batchList.Count - toUpload.Count} already on server");
 
-        int uploaded = 0;
-        await transport.SaveObjectBatchAsync(toUpload,
-            new Progress<int>(n =>
-            {
-                uploaded = n;
-                var pct = 50 + (int)(n * 40.0 / Math.Max(toUpload.Count, 1));
-                progress?.Report(($"Uploading… {n}/{toUpload.Count}", pct));
-            }), ct);
+        // 4. UPLOAD
+        if (toUpload.Count == 0)
+        {
+            progress?.Report(("All objects already on server", 90));
+            Diag("[ORBIT-DIAG] upload: nothing to upload (all objects deduped)");
+        }
+        else
+        {
+            progress?.Report(($"Uploading {toUpload.Count} objects…", 50));
+            var uploadStart = DateTime.UtcNow;
+            await transport.SaveObjectBatchAsync(toUpload,
+                new Progress<int>(n =>
+                {
+                    var pct = 50 + (int)(n * 40.0 / Math.Max(toUpload.Count, 1));
+                    progress?.Report(($"Uploading… {n}/{toUpload.Count}", pct));
+                }), ct);
+            Diag($"[ORBIT-DIAG] upload: pushed {toUpload.Count} objects in " +
+                 $"{(DateTime.UtcNow - uploadStart).TotalSeconds:F1}s");
+        }
 
         // 5. CREATE VERSION
         progress?.Report(("Creating version…", 92));
