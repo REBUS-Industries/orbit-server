@@ -176,6 +176,19 @@
   .progress-fill{height:100%;background:var(--accent);border-radius:1px;transition:width .3s;width:0%}
   .open-link{margin-top:8px;display:none}
   .open-link.show{display:block}
+
+  /* ── Send log ── */
+  .send-log{
+    display:none;max-height:130px;overflow-y:auto;
+    margin:8px 14px 0;padding:7px 9px;
+    background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:10.5px;line-height:1.55;color:var(--text2);
+  }
+  .send-log.show{display:block}
+  .send-log .log-line{white-space:pre-wrap;word-break:break-word}
+  .send-log .log-line.ok{color:var(--green)}
+  .send-log .log-line.warn{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -266,9 +279,13 @@ window.orbitReceive = function(msg) {
     case 'projects':     onProjects(m.cardId, m.items); break;
     case 'models':       onModels(m.cardId, m.items); break;
     case 'layers':       onLayers(m.layers); break;
-    case 'sendProgress': onProgress(m.cardId, m.status, m.percent); break;
-    case 'sendOk':       onSendOk(m.cardId, m.versionId, m.url); break;
-    case 'sendErr':           onSendErr(m.cardId, m.message); break;
+    case 'sendProgress':    onProgress(m.cardId, m.status, m.percent); break;
+    case 'sendLog':         onSendLog(m.cardId, m.line); break;
+    case 'sendOk':          onSendOk(m.cardId, m.versionId, m.url); break;
+    case 'sendErr':         onSendErr(m.cardId, m.message); break;
+    case 'receiveProgress': onProgress(m.cardId, m.status, m.percent); break;
+    case 'receiveOk':       onReceiveOk(m.cardId, m.summary, m.warnings); break;
+    case 'receiveErr':      onSendErr(m.cardId, m.message); break;
     case 'selectionCaptured': window._selectionCaptured?.(m.cardId, m.count); break;
     case 'cards':        onCards(m.items); break;
     case 'logout':       onLogout(); break;
@@ -359,7 +376,8 @@ function buildCard(card) {
   wrap.className = 'card' + (ui.expanded ? ' expanded' : '');
   wrap.id = 'card-' + card.id;
 
-  const ago = card.lastSentAt ? timeAgo(card.lastSentAt) : '';
+  const lastActivity = card.type === 'send' ? card.lastSentAt : (card.lastReceivedAt || card.lastSentAt);
+  const ago = lastActivity ? timeAgo(lastActivity) : '';
 
   wrap.innerHTML = `
   <div class="card-header" onclick="toggleCard('${card.id}')">
@@ -437,6 +455,7 @@ function buildCardBody(card) {
   </div>
   <div class="progress-bar" id="prog-bar-${card.id}"><div class="progress-fill" id="prog-fill-${card.id}"></div></div>
   <div class="cb-status" id="status-${card.id}"></div>
+  ${isSend ? `<div class="send-log" id="log-${card.id}"></div>` : ''}
   <div class="open-link" id="open-link-${card.id}">
     <button class="btn btn-link btn-sm" onclick="openResult('${card.id}')">↗ Open in ORBIT</button>
   </div>`;
@@ -524,6 +543,8 @@ function bindCard(card) {
     const link = document.getElementById('open-link-' + card.id);
     if (link) { link.dataset.url = ui.resultUrl; link.classList.add('show'); }
   }
+  if (card.type === 'send') updateParentStates(card.id, card);
+  if (ui.logLines && ui.logLines.length) renderSendLog(card.id);
 }
 
 // ── Card interactions ─────────────────────────────────────────────────────────
@@ -553,6 +574,7 @@ function doAction(cardId) {
   const projId = projSel?.value;
   const mdlId  = mdlSel?.value;
   if (!projId) { showStatus(cardId, 'Select a project first.', 'err'); return; }
+  if (card.type === 'send') clearSendLog(cardId);
   sendToHost(card.type === 'send' ? 'send' : 'receive', {
     cardId, projId, mdlId: mdlId || null, newModelName: modelName
   });
@@ -652,6 +674,7 @@ function onLayers(layers) {
             onchange="onLayerCheck('${c.id}',this)"/>
           <span class="layer-name">${esc(l.name)}</span>
         </div>`).join('');
+        updateParentStates(c.id, c);
       }
     }
   });
@@ -673,19 +696,58 @@ window._selectionCaptured = function(cardId, count) {
   const el = document.getElementById('capture-count-' + cardId);
   if (el) el.textContent = count + ' object' + (count === 1 ? '' : 's') + ' captured';
 };
+function layerCheckboxes(cardId) {
+  const el = document.getElementById('layers-' + cardId);
+  return el ? Array.from(el.querySelectorAll('input[type=checkbox]')) : [];
+}
 function onLayerCheck(cardId, cb) {
   const card = state.cards.find(c => c.id === cardId);
   if (!card) return;
   if (!card.includedLayers) card.includedLayers = [];
   const path = cb.dataset.path;
-  if (cb.checked) { if (!card.includedLayers.includes(path)) card.includedLayers.push(path); }
-  else { card.includedLayers = card.includedLayers.filter(p => p !== path); }
+  const checked = cb.checked;
+  cb.indeterminate = false;
+
+  // Cascade down: checking/unchecking a parent applies to every descendant
+  // (any layer whose FullPath starts with `path + "::"`), recursively.
+  const inc = new Set(card.includedLayers);
+  const setMembership = (p, on) => { if (on) inc.add(p); else inc.delete(p); };
+  setMembership(path, checked);
+  const prefix = path + '::';
+  layerCheckboxes(cardId).forEach(other => {
+    if (other.dataset.path.startsWith(prefix)) {
+      other.checked = checked;
+      other.indeterminate = false;
+      setMembership(other.dataset.path, checked);
+    }
+  });
+
+  card.includedLayers = Array.from(inc);
+  updateParentStates(cardId, card);
   sendToHost('updateCard', { card });
+}
+// Reflect mixed child selection as an indeterminate parent checkbox. A
+// parent is indeterminate when some — but not all — of {itself + its
+// descendants} are included; checked tracks the parent's own membership.
+function updateParentStates(cardId, card) {
+  const boxes = layerCheckboxes(cardId);
+  if (boxes.length === 0) return;
+  const inc = new Set(card.includedLayers || []);
+  boxes.forEach(cb => {
+    const p = cb.dataset.path;
+    const prefix = p + '::';
+    const descendants = boxes.filter(o => o.dataset.path.startsWith(prefix));
+    if (descendants.length === 0) { cb.indeterminate = false; return; }
+    const group = [p, ...descendants.map(o => o.dataset.path)];
+    const onCount = group.filter(x => inc.has(x)).length;
+    cb.checked = inc.has(p);
+    cb.indeterminate = onCount > 0 && onCount < group.length;
+  });
 }
 function selectAllLayers(cardId, all) {
   const layerListEl = document.getElementById('layers-' + cardId);
   if (!layerListEl) return;
-  layerListEl.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = all; });
+  layerListEl.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = all; cb.indeterminate = false; });
   const card = state.cards.find(c => c.id === cardId);
   if (card) {
     card.includedLayers = all ? state.layers.map(l => l.fullPath) : [];
@@ -696,6 +758,33 @@ function selectAllLayers(cardId, all) {
 // ── Progress / Status ─────────────────────────────────────────────────────────
 function onProgress(cardId, status, percent) {
   showProgress(cardId, status, percent);
+}
+// Append a line to the per-send scrollable log. Lines are kept in uiState
+// so the full run history survives a renderCards() DOM rebuild.
+function onSendLog(cardId, line) {
+  const ui = getCardUi(cardId);
+  if (!ui.logLines) ui.logLines = [];
+  ui.logLines.push(line);
+  renderSendLog(cardId);
+}
+function renderSendLog(cardId) {
+  const ui = getCardUi(cardId);
+  const el = document.getElementById('log-' + cardId);
+  if (!el) return;
+  const lines = ui.logLines || [];
+  if (lines.length === 0) { el.classList.remove('show'); el.innerHTML = ''; return; }
+  el.innerHTML = lines.map(l => {
+    const cls = l.startsWith('✓') ? ' ok' : (/skipped|placeholder/i.test(l) ? ' warn' : '');
+    return `<div class="log-line${cls}">${esc(l)}</div>`;
+  }).join('');
+  el.classList.add('show');
+  el.scrollTop = el.scrollHeight;
+}
+function clearSendLog(cardId) {
+  const ui = getCardUi(cardId);
+  ui.logLines = [];
+  const el = document.getElementById('log-' + cardId);
+  if (el) { el.classList.remove('show'); el.innerHTML = ''; }
 }
 function onSendOk(cardId, versionId, url) {
   const card = state.cards.find(c => c.id === cardId);
@@ -715,6 +804,17 @@ function onSendErr(cardId, msg) {
   showStatus(cardId, msg, 'err');
   const btn = document.getElementById('action-btn-' + cardId);
   if (btn) btn.disabled = false;
+}
+function onReceiveOk(cardId, summary, warnings) {
+  const card = state.cards.find(c => c.id === cardId);
+  if (card) { card.lastReceivedAt = new Date().toISOString(); updateCardHeader(card); }
+  hideProgress(cardId);
+  showStatus(cardId, summary || '✓ Received', 'ok');
+  const btn = document.getElementById('action-btn-' + cardId);
+  if (btn) btn.disabled = false;
+  if (warnings && warnings.length > 0) {
+    console.warn('[ORBIT] receive warnings:', warnings);
+  }
 }
 // `persist=true` (the default) updates state.uiState so the progress
 // survives a renderCards() rebuild. bindCard() calls this with
@@ -765,7 +865,8 @@ function updateCardHeader(card) {
   const ago   = el.querySelector('.card-ago');
   if (title) title.textContent = card.projectName || (card.type==='send'?'New send':'New receive');
   if (sub)   sub.textContent   = card.modelName   || 'No model selected';
-  if (ago && card.lastSentAt) ago.textContent = timeAgo(card.lastSentAt);
+  const timestamp = card.type === 'send' ? card.lastSentAt : (card.lastReceivedAt || card.lastSentAt);
+  if (ago && timestamp) ago.textContent = timeAgo(timestamp);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

@@ -24,7 +24,8 @@ public class OrbitEtoPanel : Panel, IPanel
     private readonly ServerConfig     _config;
     private readonly OrbitTokenStore  _store;
     private readonly OrbitAuthManager _auth;
-    private readonly RhinoSendPipeline _pipeline = new();
+    private readonly RhinoSendPipeline    _pipeline        = new();
+    private readonly RhinoReceivePipeline _receivePipeline = new();
     private CardStore _cardStore = null!;
 
     private OrbitClient? _client;
@@ -183,7 +184,7 @@ public class OrbitEtoPanel : Panel, IPanel
                     break;
 
                 case "receive":
-                    SendToJs(new { type = "sendErr", cardId = data.Value<string>("cardId"), message = "Receive pipeline coming soon." });
+                    await HandleReceiveAsync(data);
                     break;
 
                 case "requestLayers":
@@ -482,10 +483,12 @@ public class OrbitEtoPanel : Panel, IPanel
         using var transport = new ServerTransport(_serverUrl, projId, _token);
         var progress = new Progress<(string s, int p)>(x =>
             SendToJs(new { type = "sendProgress", cardId, status = x.s, percent = x.p }));
+        var log = new Progress<string>(line =>
+            SendToJs(new { type = "sendLog", cardId, line }));
 
         try
         {
-            var versionId = await _pipeline.SendAsync(card, doc, transport, _client, progress);
+            var versionId = await _pipeline.SendAsync(card, doc, transport, _client, progress, log);
             card.LastVersionId = versionId;
             card.LastSentAt    = DateTime.UtcNow;
             _cardStore.UpdateCard(card);
@@ -495,6 +498,67 @@ public class OrbitEtoPanel : Panel, IPanel
         catch (Exception ex)
         {
             SendToJs(new { type = "sendErr", cardId, message = ex.Message });
+        }
+    }
+
+    // ── Receive ───────────────────────────────────────────────────────────────
+
+    private async Task HandleReceiveAsync(JObject data)
+    {
+        var cardId = data.Value<string>("cardId") ?? "";
+        var projId = data.Value<string>("projId") ?? "";
+        var mdlId  = data.Value<string>("mdlId")  ?? "";
+
+        if (_client == null || string.IsNullOrEmpty(_token))
+        {
+            SendToJs(new { type = "receiveErr", cardId, message = "Not logged in." });
+            return;
+        }
+
+        var card = _cardStore.Cards.FirstOrDefault(c => c.Id == cardId);
+        if (card == null)
+        {
+            SendToJs(new { type = "receiveErr", cardId, message = "Card not found." });
+            return;
+        }
+
+        var doc = RhinoDoc.ActiveDoc;
+        if (doc == null)
+        {
+            SendToJs(new { type = "receiveErr", cardId, message = "No active Rhino document." });
+            return;
+        }
+
+        if (string.IsNullOrEmpty(projId) || string.IsNullOrEmpty(mdlId))
+        {
+            SendToJs(new { type = "receiveErr", cardId, message = "Select a project and model first." });
+            return;
+        }
+
+        card.ProjectId = projId;
+        card.ModelId   = mdlId;
+
+        var progress = new Progress<(string s, int p)>(x =>
+            SendToJs(new { type = "receiveProgress", cardId, status = x.s, percent = x.p }));
+
+        try
+        {
+            var result = await _receivePipeline.ReceiveAsync(
+                card, _config, doc, _client, _token, progress);
+
+            card.LastReceivedAt        = DateTime.UtcNow;
+            card.LastReceivedVersionId = null; // updated next time we fetch versions
+            _cardStore.UpdateCard(card);
+
+            var summary = $"✓ Received {result.ObjectCount} object(s) into {result.LayerCount} layer(s)";
+            if (result.Warnings.Count > 0)
+                summary += $" ({result.Warnings.Count} warning(s))";
+
+            SendToJs(new { type = "receiveOk", cardId, summary, warnings = result.Warnings });
+        }
+        catch (Exception ex)
+        {
+            SendToJs(new { type = "receiveErr", cardId, message = ex.Message });
         }
     }
 
