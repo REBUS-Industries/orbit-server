@@ -1,4 +1,4 @@
-﻿version: "3.9"
+version: "3.9"
 
 # ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
 # Includes: ORBIT platform + PRISM file conversion service
@@ -53,7 +53,10 @@ services:
   # â”€â”€ ORBIT Frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Image: ghcr.io/rebus-orbit/orbit-frontend (built from REBUS-ORBIT/orbit-server source)
   orbit-frontend:
-    image: ghcr.io/rebus-orbit/orbit-frontend:${ORBIT_FRONTEND_VERSION:-latest}
+    # camera-default patch: front-facing default view; image built on the VM
+    # via ./patches/orbit-frontend/build-patched.sh (docker commit; see its README).
+    image: orbit-frontend-patched:${ORBIT_FRONTEND_VERSION:-latest}
+    pull_policy: never
     restart: unless-stopped
     environment:
       NUXT_PUBLIC_SERVER_NAME:         ${SERVER_NAME:-ORBIT}
