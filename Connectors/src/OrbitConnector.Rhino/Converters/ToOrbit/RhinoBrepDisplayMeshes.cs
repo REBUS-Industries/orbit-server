@@ -22,12 +22,7 @@ internal static class RhinoBrepDisplayMeshes
     /// </summary>
     public static IReadOnlyList<Mesh> Extract(Brep brep, ConversionContext context)
     {
-        // Block-instance members arrive here already transformed into the
-        // placement; the parent object on the context is the definition member
-        // whose cached render mesh lives in definition-local space and would
-        // place the geometry at the block origin. Tessellate the transformed
-        // Brep directly in that case.
-        var rhinoObj = context.GeometryIsPreTransformed ? null : context.CurrentObject;
+        var rhinoObj = context.CurrentObject;
         if (rhinoObj != null)
         {
             var renderMeshes = rhinoObj.GetMeshes(MeshType.Render);

@@ -36,9 +36,17 @@ public class Mesh : Base.OrbitBase
     [JsonProperty("textureCoordinates")]
     public List<double>? TextureCoordinates { get; set; }
 
-    /// <summary>Per-face colour as ARGB int array. Optional.</summary>
+    /// <summary>Per-vertex colour as ARGB int array. Optional.</summary>
     [JsonProperty("colors")]
     public List<int>? Colors { get; set; }
+
+    /// <summary>
+    /// Inline material attached to this mesh. The working Speckle reference
+    /// deployment carries <c>renderMaterial</c> directly on each mesh (rather
+    /// than via root-level proxies), so the viewer always finds it. Optional.
+    /// </summary>
+    [JsonProperty("renderMaterial", NullValueHandling = NullValueHandling.Ignore)]
+    public Other.RenderMaterial? RenderMaterial { get; set; }
 
     [JsonProperty("units")] public string? Units { get; set; }
 

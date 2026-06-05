@@ -105,16 +105,10 @@ public class RhinoSendPipeline
         if (context.PendingBlobFiles.Count > 0)
         {
             progress?.Report(($"Uploading {context.PendingBlobFiles.Count} texture(s)…", 36));
-            log?.Report($"Uploading {context.PendingBlobFiles.Count} texture(s)…");
             using var blobUploader = new OrbitBlobUploader(
                 client.ServerUrl, card.ProjectId!, client.AuthToken);
             var hashToServerId = await blobUploader.UploadAsync(context.PendingBlobFiles, ct);
             TextureBlobPatcher.Patch(root, hashToServerId);
-            log?.Report($"Uploaded {hashToServerId.Count} texture blob(s).");
-        }
-        else
-        {
-            log?.Report("No textures to upload.");
         }
 
         // 3. SERIALISE
@@ -240,14 +234,6 @@ public class RhinoSendPipeline
 
                 var converted = ConvertWithFallback(obj, context);
                 context.CurrentObject = null;
-
-                processed++;
-                if (processed % 10 == 0 || processed == totalToConvert)
-                {
-                    var pct = 10 + (int)(processed * 24.0 / Math.Max(totalToConvert, 1));
-                    progress?.Report(($"Converting… {processed}/{totalToConvert}", pct));
-                }
-
                 if (converted == null) continue;
 
                 converted.ApplicationId = obj.Id.ToString();
@@ -428,7 +414,6 @@ public class RhinoSendPipeline
         if (geometry == null)
         {
             RhinoApp.WriteLine($"[ORBIT] skipped {rhinoObj.Id}: no geometry");
-            context.Summary.Skipped++;
             return null;
         }
 
@@ -455,20 +440,14 @@ public class RhinoSendPipeline
             converter?.GetType().Name ?? "RhinoFallbackConverter");
 
         if (primary != null)
-        {
-            context.Summary.Direct++;
             return primary;
-        }
 
         var fallbackMesh = TryConvert(
             () => _fallback.Convert(geometry, context),
             "RhinoFallbackConverter");
 
         if (fallbackMesh != null)
-        {
-            context.Summary.MeshFallback++;
             return fallbackMesh;
-        }
 
         var extracted = RhinoObjectMeshes.ExtractFromObject(rhinoObj, context);
         if (extracted.Count > 0)
@@ -478,8 +457,6 @@ public class RhinoSendPipeline
                 .Select(m => meshConverter.Convert(m, context))
                 .Cast<OrbitBase>()
                 .ToList();
-
-            context.Summary.MeshFallback++;
 
             if (orbitMeshes.Count == 1)
                 return orbitMeshes[0];
@@ -497,10 +474,7 @@ public class RhinoSendPipeline
                 () => curveConverter.Convert(geometry, context),
                 "RhinoCurveConverter");
             if (curveObj != null)
-            {
-                context.Summary.Direct++;
                 return curveObj;
-            }
         }
 
         if (geometry is Surface surface)
@@ -510,10 +484,7 @@ public class RhinoSendPipeline
                 () => surfaceConverter.Convert(surface, context),
                 "RhinoSurfaceConverter");
             if (surfaceObj != null)
-            {
-                context.Summary.Direct++;
                 return surfaceObj;
-            }
         }
 
         var bboxMesh = RhinoObjectMeshes.BoundingBoxMesh(geometry);
@@ -521,13 +492,11 @@ public class RhinoSendPipeline
         {
             RhinoApp.WriteLine(
                 $"[ORBIT] warning {rhinoObj.Id}: using bounding-box placeholder ({lastReason ?? "no mesh"})");
-            context.Summary.BoundingBox++;
             return new RhinoMeshConverter().Convert(bboxMesh, context);
         }
 
         RhinoApp.WriteLine(
             $"[ORBIT] skipped {rhinoObj.Id}: {lastReason ?? "no conversion path"}");
-        context.Summary.Skipped++;
         return null;
     }
 }

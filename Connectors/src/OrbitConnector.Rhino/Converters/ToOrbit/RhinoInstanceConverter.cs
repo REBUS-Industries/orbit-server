@@ -89,82 +89,48 @@ public class RhinoInstanceConverter : IRhinoToOrbitConverter
         var members = def.GetObjects();
         if (members == null) return result;
 
-        var saved          = context.CurrentObject;
-        var savedTransform = context.GeometryIsPreTransformed;
+        var xform = instObj.InstanceXform;
+        var saved = context.CurrentObject;
 
         try
         {
-            // Members are baked into world position by the placement transform,
-            // so display-mesh extraction must tessellate the transformed copy
-            // rather than reuse the definition member's local render mesh.
-            context.GeometryIsPreTransformed = true;
-            AppendTransformedMembers(members, instObj.InstanceXform, context, result);
+            foreach (var sub in members)
+            {
+                if (sub?.Geometry == null) continue;
+                context.CurrentObject = sub;
+
+                // Duplicate-and-transform so we don't mutate the definition's
+                // geometry — block definitions are shared template data and
+                // multiple instances can reference the same members.
+                var src = sub.Geometry.Duplicate() as GeometryBase;
+                if (src == null) continue;
+                src.Transform(xform);
+
+                OrbitBase? converted = src switch
+                {
+                    Brep brep        => _brepConverter.Convert(brep, context),
+                    Extrusion ext    => _extrusionConverter.Convert(ext, context),
+                    SubD subd        => _subdConverter.Convert(subd, context),
+                    Surface srf      => _surfaceConverter.Convert(srf, context),
+                    Mesh mesh        => _meshConverter.Convert(mesh, context),
+                    Curve curve      => _curveConverter.Convert(curve, context),
+                    Point pt         => _pointConverter.Convert(pt, context),
+                    _                => null,
+                };
+
+                if (converted != null)
+                {
+                    converted.ApplicationId = sub.Id.ToString();
+                    result.Add(converted);
+                }
+            }
         }
         finally
         {
-            context.CurrentObject            = saved;
-            context.GeometryIsPreTransformed = savedTransform;
+            context.CurrentObject = saved;
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Convert each definition member into the placement defined by
-    /// <paramref name="xform"/>. Nested block instances are expanded
-    /// recursively with the composed transform so their leaf geometry lands in
-    /// the outer placement instead of being silently dropped (the per-type
-    /// switch has no <see cref="InstanceReferenceGeometry"/> case).
-    /// </summary>
-    private void AppendTransformedMembers(
-        IEnumerable<RhinoObject> members,
-        global::Rhino.Geometry.Transform xform,
-        ConversionContext context,
-        List<OrbitBase> result)
-    {
-        foreach (var sub in members)
-        {
-            if (sub?.Geometry == null) continue;
-
-            // Nested block — recurse into its definition with the composed
-            // transform (outer placement ∘ nested placement).
-            if (sub.Geometry is InstanceReferenceGeometry nested)
-            {
-                var nestedDef = context.Doc.InstanceDefinitions.FindId(nested.ParentIdefId);
-                var nestedMembers = nestedDef?.GetObjects();
-                if (nestedMembers != null)
-                    AppendTransformedMembers(
-                        nestedMembers, xform * nested.Xform, context, result);
-                continue;
-            }
-
-            context.CurrentObject = sub;
-
-            // Duplicate-and-transform so we don't mutate the definition's
-            // geometry — block definitions are shared template data and
-            // multiple instances can reference the same members.
-            var src = sub.Geometry.Duplicate() as GeometryBase;
-            if (src == null) continue;
-            src.Transform(xform);
-
-            OrbitBase? converted = src switch
-            {
-                Brep brep        => _brepConverter.Convert(brep, context),
-                Extrusion ext    => _extrusionConverter.Convert(ext, context),
-                SubD subd        => _subdConverter.Convert(subd, context),
-                Surface srf      => _surfaceConverter.Convert(srf, context),
-                Mesh mesh        => _meshConverter.Convert(mesh, context),
-                Curve curve      => _curveConverter.Convert(curve, context),
-                Point pt         => _pointConverter.Convert(pt, context),
-                _                => null,
-            };
-
-            if (converted != null)
-            {
-                converted.ApplicationId = sub.Id.ToString();
-                result.Add(converted);
-            }
-        }
     }
 
     /// <summary>Speckle column-major 4×4 from Rhino transform.</summary>

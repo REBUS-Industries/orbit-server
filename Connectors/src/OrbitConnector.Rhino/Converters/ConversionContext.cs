@@ -24,18 +24,6 @@ public class ConversionContext
     /// </summary>
     public RhinoObject? CurrentObject { get; set; }
 
-    /// <summary>
-    /// True while converting geometry that has already been baked into world
-    /// position by a placement transform (block-instance members). In this
-    /// state <see cref="CurrentObject"/> is the block definition's member
-    /// object whose cached render mesh is in DEFINITION-LOCAL coordinates and
-    /// therefore does NOT match the transformed geometry being converted —
-    /// display-mesh extraction must tessellate the transformed geometry
-    /// instead of reusing the object's render mesh, otherwise the member
-    /// renders at the definition origin rather than the placement.
-    /// </summary>
-    public bool GeometryIsPreTransformed { get; set; }
-
     // Proxy collections — populated during send, consumed by bakers during
     // receive. The current send pipeline emits colour/material inline on each
     // mesh (matching the working Speckle reference), so these stay empty for
@@ -56,13 +44,6 @@ public class ConversionContext
     /// uploaded and patched to server blob ids before serialisation.
     /// </summary>
     public Dictionary<string, string> PendingBlobFiles { get; } = new();
-
-    /// <summary>
-    /// Running tally of conversion outcomes, surfaced to the UI send log so
-    /// the user can see how each object was handled rather than only finding
-    /// the <c>RhinoApp.WriteLine</c> notes in the Rhino command line.
-    /// </summary>
-    public ConversionSummary Summary { get; } = new();
 
     public ConversionContext(RhinoDoc doc)
     {
@@ -301,26 +282,4 @@ public class ConversionContext
         if (v >= 255) return 255;
         return (int)Math.Round(v);
     }
-}
-
-/// <summary>
-/// Per-send counters describing how each Rhino object was converted, so the
-/// pipeline can report a breakdown to the panel instead of only logging to
-/// the Rhino command line.
-/// </summary>
-public class ConversionSummary
-{
-    /// <summary>Converted by its dedicated type converter on the first try.</summary>
-    public int Direct { get; set; }
-
-    /// <summary>Recovered by re-meshing the geometry (fallback or extracted display meshes).</summary>
-    public int MeshFallback { get; set; }
-
-    /// <summary>Represented by a bounding-box placeholder because no mesh could be produced.</summary>
-    public int BoundingBox { get; set; }
-
-    /// <summary>Could not be converted by any path and was dropped.</summary>
-    public int Skipped { get; set; }
-
-    public int Total => Direct + MeshFallback + BoundingBox + Skipped;
 }

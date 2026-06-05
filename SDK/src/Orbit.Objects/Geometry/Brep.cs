@@ -44,6 +44,14 @@ public class Brep : Base.OrbitBase
     [JsonProperty("displayValue")]
     public List<Mesh>? DisplayValue { get; set; }
 
+    /// <summary>
+    /// Inline render material. Mirrors the Speckle reference structure —
+    /// each Brep can carry its own material that the viewer uses when no
+    /// per-vertex colour is set.
+    /// </summary>
+    [JsonProperty("renderMaterial", NullValueHandling = NullValueHandling.Ignore)]
+    public Other.RenderMaterial? RenderMaterial { get; set; }
+
     /// <summary>Full Rhino layer path of the source object.</summary>
     [JsonProperty("layerPath")]
     public string? LayerPath { get; set; }
