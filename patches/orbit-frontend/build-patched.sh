@@ -57,6 +57,10 @@ const patches=[
   {old:'setOrbit(2.356,.955)', new:'setOrbit(5.498,.955)'},
   // Patch 2: suppress @elements Array Collection nodes in viewer model tree
   {old:'new Set(["children","elements"])', new:'new Set(["children","elements","@elements"])'},
+  // Patch 3: recognise @elements as isSingleCollection so layer children render
+  // directly.  Without this, b?.elements is undefined for @elements keys and
+  // hasChildren stays false, hiding all geometry inside layer collections.
+  {old:'null,g=C(b?.children)||C(b?.elements),y', new:'null,g=C(b?.children)||C(b?.elements)||C(b?.["@elements"]),y'},
 ];
 
 let n=fs.readFileSync('/w/nitro.mjs','utf8');
