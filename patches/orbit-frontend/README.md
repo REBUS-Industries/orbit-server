@@ -59,3 +59,112 @@ version bump (which changes the hash). New sessions get the fix immediately.
 
 Restore the `orbit-frontend` service to `image: ghcr.io/rebus-orbit/orbit-frontend:${ORBIT_FRONTEND_VERSION}`
 (remove `pull_policy: never`) and `docker compose up -d --no-deps orbit-frontend`.
+
+---
+
+# Pending patch recipe — Decision C: parent model row federates submodels
+
+> Status: NOT YET APPLIED. This is a recipe for an operator on a Docker-capable
+> host (e.g. VM 211) to finish, because the exact minified literals must be
+> extracted from the deployed bundle. No functional change has been made to
+> `build-patched.sh` for this yet.
+
+## Intent
+
+Nested models already exist (the hierarchy is the slash-delimited model name,
+e.g. `test/sub1/sub2`), and the FE2 model-list folder **"View all"** button
+already opens the federated `$<fullName>` view of all descendant submodels.
+
+Decision C makes the **parent/group row's own name + preview links** federate
+too: clicking a parent that `hasChildren` should open all its submodels, not
+just that single model. This mirrors the existing `viewAllUrl` the "View all"
+button uses (prefix `$`, encode `/` as `%2F`).
+
+## Source-level change (what the minified patch must reproduce)
+
+In `packages/frontend-2/components/project/page/models/StructureItem.vue` the
+two primary links currently bind to `modelLink` (the single-model route). The
+change adds a `primaryLink` computed and points both `:to` bindings at it:
+
+```ts
+// alongside the existing viewAllUrl / modelLink computeds:
+const primaryLink = computed(() =>
+  hasChildren.value ? viewAllUrl.value : modelLink.value
+)
+```
+
+```diff
+- <NuxtLink :to="modelLink || undefined">   <!-- name link -->
++ <NuxtLink :to="primaryLink || undefined">
+- <NuxtLink :to="modelLink || ''">          <!-- preview / thumbnail link -->
++ <NuxtLink :to="primaryLink || ''">
+```
+
+`viewAllUrl` already exists in the component and is built as
+`modelRoute(projectId, ('$' + fullName).replace(/\//g, '%2F'))`.
+
+## Step 1 — extract + locate the literals (on a Docker host)
+
+The render code lives in a content-hashed lazy chunk (chunk filenames keep the
+component name). Pull `_nuxt` from the base image and locate the construct; the
+`%2F` federation encoder is a near-unique anchor for `viewAllUrl`:
+
+```sh
+VER=v2.4.9
+docker create --name fe-x ghcr.io/rebus-orbit/orbit-frontend:$VER >/dev/null
+docker cp fe-x:/speckle-server/public/_nuxt ./_nuxt && docker rm fe-x >/dev/null
+
+ls _nuxt | grep -i StructureItem                       # the StructureItem chunk
+grep -o '.\{160\}%2F.\{60\}' _nuxt/StructureItem*.js    # mangled ref for viewAllUrl
+grep -o 'to:[^,}]\{0,40\}'   _nuxt/StructureItem*.js    # the two to: bindings (modelLink)
+grep -o '.\{40\}hasChildren.\{40\}' _nuxt/StructureItem*.js  # if name survives; else trace the ref
+```
+
+From that output identify the mangled refs for `viewAllUrl` (call it `V`),
+`modelLink` (`M`), and `hasChildren` (`H`), and the exact two `to:` binding
+substrings.
+
+## Step 2 — add a `patches[]` entry to `build-patched.sh`
+
+Append one entry per distinct `to:` binding to the `patches` array (illustrative
+shape — REPLACE `M`/`V`/`H` and the exact surrounding bytes with the verified
+literals from Step 1):
+
+```js
+// Patch N: parent (hasChildren) model rows federate submodels via "$<fullName>"
+{ old: 'to:M.value||void 0', new: 'to:(H.value?V.value:M.value)||void 0' },
+{ old: 'to:M.value||""',     new: 'to:(H.value?V.value:M.value)||""'     },
+```
+
+The build script enforces correctness for you: it `find`s the chunk that
+contains each `old` literal and **exits non-zero if the literal isn't found**,
+verifies the chunk's `etag` against the existing manifest before editing,
+regenerates `.br`/`.gz`, and rewrites the manifest `etag`+`size` (so a
+size-changing patch is fine — it need not be length-neutral). If an `old`
+literal is wrong or stale, the build fails loudly rather than shipping a
+mis-patch.
+
+## Step 3 — build + deploy (on VM 211)
+
+```sh
+cd /opt/orbit/server
+ORBIT_FRONTEND_VERSION=v2.4.9 sh patches/orbit-frontend/build-patched.sh
+docker compose up -d --no-deps orbit-frontend
+```
+
+Then update the "Patches applied" comment in `build-patched.sh` and the top of
+this README to list Decision C as applied, and commit those changes.
+
+## Caveat: re-extract on every frontend version bump
+
+This is a **minified-bundle** patch keyed on build-specific mangled identifiers.
+On any `orbit-frontend` version bump the literals change, the `old` strings stop
+matching, and the build script fails loud — at which point the literals must be
+**re-extracted** (repeat Step 1) and the `patches[]` entries updated.
+
+The **durable alternative** is to make Decision C a *source* change
+(`primaryLink` computed + the two `:to` rewrites above) compiled into a
+**source-built `orbit-frontend` image in REBUS-Industries**, rather than a
+bundle patch. That removes the per-version fragility entirely and is the
+recommended long-term home for this change. The minified patch above is the
+quick, in-place option until that source build exists.
