@@ -182,6 +182,23 @@ services:
       timeout: 5s
       retries: 3
 
+  # ORBIT API docs — markdown reference at /docs (see docs/README.md)
+  orbit-docs:
+    build:
+      context: .
+      dockerfile: docs-server/Dockerfile
+    image: orbit-docs:local
+    pull_policy: build
+    restart: unless-stopped
+    environment:
+      PUBLIC_BASE_URL: ${SERVER_URL:?SERVER_URL must be set}
+      PORT: "3080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # â”€â”€ Internal Caddy (routes within the stack) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   caddy:
     image: caddy:2-alpine
@@ -194,6 +211,13 @@ services:
       - ./caddy-resolv.conf:/etc/resolv.conf:ro
       - caddy_data:/data
       - caddy_config:/config
+    depends_on:
+      orbit-docs:
+        condition: service_healthy
+      orbit-frontend:
+        condition: service_started
+      orbit-server:
+        condition: service_healthy
 
 volumes:
   postgres_data:

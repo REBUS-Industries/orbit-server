@@ -1,0 +1,13 @@
+{
+  "name": "orbit-docs",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "markdown-it": "^14.1.0"
+  }
+}
