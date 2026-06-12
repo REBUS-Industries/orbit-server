@@ -14,7 +14,7 @@ This document is the primary reference for deploying, maintaining, and troublesh
 |---|---|---|---|---|
 | 201 | Legacy Speckle (keep running) | 10.0.200.11 | speckle-prod | Live — do not touch |
 | 211 | ORBIT PROD + PRISM | 10.0.200.211 | orbit-prod | Needs provisioning |
-| 212 | ORBIT DEV + PRISM | 10.0.200.212 | orbit-dev | Needs provisioning |
+| 212 | PRISM DEV | 10.0.200.212 | orbit-dev | Needs provisioning |
 
 ### External Proxy LXCs (HA Caddy pair)
 
@@ -28,7 +28,6 @@ This document is the primary reference for deploying, maintaining, and troublesh
 | URL | Routes to | Purpose |
 |---|---|---|
 | `orbit.rebus.industries` | VM 211 | ORBIT production |
-| `orbit-dev.rebus.industries` | VM 212 | ORBIT development |
 | `prism.rebus.industries` | VM 211:8765 | PRISM API (prod) |
 | `prism-dev.rebus.industries` | VM 212:8765 | PRISM API (dev) |
 | `speckle.rebus.industries` | VM 201 | Legacy — leave alone |

@@ -5,21 +5,10 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
-    inputs:
-      target:
-        description: 'Deploy target'
-        required: true
-        default: 'prod'
-        type: choice
-        options: [prod, dev, both]
 
 jobs:
   deploy-prod:
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'push' ||
-      github.event.inputs.target == 'prod' ||
-      github.event.inputs.target == 'both'
     steps:
       - uses: actions/checkout@v4
 
@@ -38,17 +27,3 @@ jobs:
             docker image prune -f
             echo "✓ ORBIT PROD deploy complete: $(date)"
             docker compose ps
-
-  deploy-dev:
-    runs-on: ubuntu-latest
-    if: >
-      github.event.inputs.target == 'dev' ||
-      github.event.inputs.target == 'both'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to VM 212 (ORBIT DEV — 10.0.200.212)
-        uses: appleboy/ssh-action@v1
-        with:
-          host:     ${{ secrets.DEV_VM_HOST }}
-          
