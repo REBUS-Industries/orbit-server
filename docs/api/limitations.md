@@ -12,6 +12,11 @@ Known constraints for ORBIT API integrators (REBUS production instance, 2026-06)
 - **Blob attachments** — separate upload step; blob API not covered in this docs v1 (use browser devtools or upstream Speckle file-upload docs).
 - **Legacy `data` bag** — unstructured JSON on deprecated API; avoid for new work.
 
+## Viewers
+
+- **No `@speckle/viewer` guide** — ORBIT does not ship or support the upstream Speckle viewer npm package. See [Building a 3rd party viewer](building-a-3rd-party-viewer) for the receive pipeline, or PRISM UE streaming for portal embeds.
+- **`viewerState` / `resourceIdString`** — also listed under Comments above; required for custom viewers that show pins.
+
 ## Documentation & discovery
 
 - **`/docs`** — this site (ORBIT-specific). Previously returned 404 until the `orbit-docs` service was added to the stack.
