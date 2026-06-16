@@ -14,6 +14,7 @@ const NAV = [
   { slug: 'authentication', title: 'Authentication' },
   { slug: 'projects-models-versions', title: 'Projects, models & versions' },
   { slug: 'objects', title: 'Objects (REST)' },
+  { slug: 'materials', title: 'Materials' },
   { slug: 'building-a-3rd-party-viewer', title: 'Building a 3rd party viewer' },
   { slug: 'comments-discussions', title: 'Comments & discussions' },
   { slug: 'graphql-reference', title: 'GraphQL reference' },

@@ -266,6 +266,8 @@ PBR fields used by connectors:
 
 Convert diffuse/emissive from ARGB packed integers. Resolve texture fields through the blob API before binding to your material system.
 
+For immutability rules, manual re-commit workflow, and the **PRISM material swap API** (`POST /api/orbit/material-swap`), see [Materials](materials).
+
 ### displayValue fallback
 
 Types like `Objects.Geometry.Brep`, `Objects.Geometry.NurbsCurve`, and higher-level data objects (`Speckle.DataObject`, BIM elements) carry a `displayValue` array of meshes (inline or reference stubs). **Always render `displayValue` when the native type is unsupported** — the native Brep/NURBS encoding is not intended for real-time viewers.
