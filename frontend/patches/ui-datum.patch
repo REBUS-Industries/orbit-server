@@ -10,7 +10,7 @@
  } from '@speckle/viewer'
  import { Box3, Vector3, Matrix3 } from 'three'
  import { OBB } from 'three/examples/jsm/math/OBB'
-@@ -624,3 +625,16 @@
+@@ -624,3 +625,17 @@
      getShortcutDisplayText
    }
  }
