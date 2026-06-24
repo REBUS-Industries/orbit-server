@@ -1,11 +1,17 @@
-# ORBIT source-built frontend image.
-# Clones the read-only Speckle fork at a pinned commit, applies ORBIT overlays
-# from ./overlays/, and builds packages/viewer + packages/frontend-2.
+# ORBIT source-built frontend image — CUSTOM BRANDED build.
+#
+# Builds the REBUS/ORBIT-branded Speckle fork from source:
+#   CheekiSkrub/speckle-server-dev @ branch rebus-dev (pinned commit below).
+# This branch carries the ORBIT branding (orbit_logo.png, "ORBIT" wordmark,
+# Version/Login panels) and the custom viewer (setup.ts, object-sidebar labels,
+# geometry/material converters). Do NOT point this at the fork's `main` branch —
+# that is STOCK upstream Speckle with no ORBIT branding.
 ARG NODE_ENV=production
-ARG SPECKLE_UPSTREAM_COMMIT=d3854d45a23649b50d3a2ce3c4868de211769bda
+# rebus-dev branded HEAD. Bump to a newer rebus-dev commit (or a REBUS-v* tag) to update.
+ARG ORBIT_FRONTEND_SOURCE_COMMIT=173d64210351c0b16a64437aaeb6e3dddf5eeada
 
 FROM node:22-bookworm-slim@sha256:221ee67425de7a3c11ce4e81e63e50caaec82ede3a7d34599ab20e59d29a0cb5 AS fetch-upstream
-ARG SPECKLE_UPSTREAM_COMMIT
+ARG ORBIT_FRONTEND_SOURCE_COMMIT
 RUN apt-get update -y \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates=20230311+deb12u1 \
@@ -14,7 +20,8 @@ RUN apt-get update -y \
 WORKDIR /src
 RUN git clone https://github.com/CheekiSkrub/speckle-server-dev.git speckle-server \
   && cd speckle-server \
-  && git checkout ${SPECKLE_UPSTREAM_COMMIT}
+  && git checkout ${ORBIT_FRONTEND_SOURCE_COMMIT} \
+  && echo "Built ORBIT frontend from $(git rev-parse HEAD)"
 
 FROM node:22-bookworm-slim@sha256:221ee67425de7a3c11ce4e81e63e50caaec82ede3a7d34599ab20e59d29a0cb5 AS build-stage
 WORKDIR /speckle-server
@@ -33,19 +40,6 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=fetch-upstream /src/speckle-server/ .
-COPY overlays/packages/ ./packages/
-COPY patches/ ./patches/
-RUN apt-get update -y \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends patch=2.7.6-7 \
-  && patch -p1 < patches/setup-datum.patch \
-  && patch -p1 < patches/postSetup-datum.patch \
-  && patch -p1 < patches/ui-datum.patch \
-  && patch -p1 < patches/viewer-index-datum.patch \
-  && patch -p1 < patches/camera-default.patch \
-  && apt-get remove -y patch \
-  && apt-get autoremove -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
 
 ARG NODE_ENV
 ENV NODE_ENV=${NODE_ENV}
