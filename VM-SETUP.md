@@ -252,16 +252,42 @@ docker compose logs orbit-server --tail 50
 
 ---
 
-## Step 12 — Set up auto-deploy path
+## Step 12 — Set up auto-deploy (self-hosted runner)
 
-The GitHub Actions deploy workflow expects the repo at `/opt/orbit/server`:
+GitHub-hosted runners **cannot reach** VM 211 on `10.0.200.211` (private network).
+Deploy uses a **self-hosted Actions runner** on the VM instead of SSH from GitHub.
+
+### 12a — Install the runner (once, on VM 211)
+
+```bash
+# On VM 211 as the deploy user (e.g. dom)
+mkdir -p ~/actions-runner && cd ~/actions-runner
+# Download latest linux x64 runner from https://github.com/actions/runner/releases
+curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-2.321.0.tar.gz
+tar xzf actions-runner.tar.gz
+# Token: GitHub → orbit-server → Settings → Actions → Runners → New self-hosted runner
+./config.sh --url https://github.com/REBUS-Industries/orbit-server --token YOUR_TOKEN --labels orbit-prod --unattended
+sudo ./svc.sh install dom
+sudo ./svc.sh start
+```
+
+The workflow (`.github/workflows/deploy.yml`) runs on `[self-hosted, orbit-prod]` and executes
+`scripts/deploy.sh` logic after syncing `/opt/orbit/server`.
+
+### 12b — Manual deploy (use this until the runner is registered)
+
+```bash
+ssh dom@10.0.200.211
+cd /opt/orbit/server
+git pull origin main
+./scripts/deploy.sh
+```
+
+The first frontend source build may take 20–40 minutes (`docker compose build orbit-frontend`).
 
 ```bash
 # Confirm the deploy script is executable
 chmod +x /opt/orbit/server/scripts/deploy.sh
-
-# Test it manually
-/opt/orbit/server/scripts/deploy.sh
 ```
 
 ---
@@ -303,4 +329,5 @@ systemctl reload caddy
 - [ ] `curl http://10.0.200.211/api/v1/info` returns ORBIT server info
 - [ ] https://orbit.rebus.industries loads in browser (after Caddy update)
 - [ ] https://orbit-dev.rebus.industries loads in browser
-- [ ] GitHub Actions deploy runs successfully on tag push
+- [ ] GitHub Actions self-hosted runner `orbit-prod` shows **Idle** on VM 211
+- [ ] Push to `main` triggers deploy workflow successfully (or manual `./scripts/deploy.sh` works)

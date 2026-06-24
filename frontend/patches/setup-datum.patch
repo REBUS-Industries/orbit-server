@@ -1,6 +1,7 @@
 --- a/packages/frontend-2/lib/viewer/composables/setup.ts
 +++ b/packages/frontend-2/lib/viewer/composables/setup.ts
-@@ -4,7 +4,8 @@
+@@ -3,7 +3,8 @@
+   ViewerEvent,
    DefaultLightConfiguration,
    LegacyViewer,
 -  FilteringExtension
@@ -9,10 +10,11 @@
  } from '@speckle/viewer'
  import type {
    ViewMode,
-@@ -457,6 +458,7 @@
+@@ -458,6 +459,7 @@
        verbose: !!(import.meta.client && params.viewerDebug)
      })
      viewer.createExtension(HighlightExtension)
 +    viewer.createExtension(DatumGizmoExtension)
      viewer.createExtension(PassReader)
      const initPromise = viewer.init()
+ 

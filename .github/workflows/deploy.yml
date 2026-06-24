@@ -8,25 +8,24 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+# Deploy runs on a self-hosted runner installed on VM 211 (internal IP
+# 10.0.200.211). GitHub-hosted runners cannot SSH to private RFC1918 addresses —
+# the previous appleboy/ssh-action approach timed out with "dial tcp :22: i/o timeout".
+
 jobs:
   deploy-prod:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, orbit-prod]
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to VM 211 (ORBIT PROD — 10.0.200.211)
-        uses: appleboy/ssh-action@v1
-        with:
-          host:     ${{ secrets.PROD_VM_HOST }}
-          username: ${{ secrets.PROD_VM_USER }}
-          key:      ${{ secrets.PROD_VM_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/orbit/server
-            git pull origin main
-            docker compose pull --ignore-buildable
-            docker compose build --pull orbit-server orbit-frontend
-            docker compose up -d --remove-orphans
-            docker image prune -f
-            echo "✓ ORBIT PROD deploy complete: $(date)"
-            docker compose ps
+      - name: Sync repo and deploy stack
+        run: |
+          set -euo pipefail
+          cd /opt/orbit/server
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose pull --ignore-buildable
+          docker compose build --pull orbit-server orbit-frontend
+          docker compose up -d --remove-orphans
+          docker image prune -f
+          echo "✓ ORBIT PROD deploy complete: $(date)"
+          docker compose ps
