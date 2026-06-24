@@ -1,4 +1,4 @@
-import { Box3, Group, Matrix4, Vector3 } from 'three'
+import { Group, Matrix4, Vector3 } from 'three'
 import { TransformControls } from './TransformControls.js'
 import { Extension } from './Extension.js'
 import { CameraController } from './CameraController.js'
@@ -47,12 +47,17 @@ export class DatumGizmoExtension extends Extension {
   }
 
   private detach(): void {
+    const scene = this.viewer.getRenderer().scene
     if (this.transformControls) {
       this.transformControls.detach()
-      this.viewer.getRenderer().scene.remove(this.transformControls)
+      // The visual gizmo is `_root` (a three.js Object3D), not the controls object.
+      scene.remove(this.transformControls._root)
       this.transformControls = null
     }
-    this.anchor = null
+    if (this.anchor) {
+      scene.remove(this.anchor)
+      this.anchor = null
+    }
   }
 
   private updateGizmo(objectIds: string[]): void {
@@ -73,39 +78,46 @@ export class DatumGizmoExtension extends Extension {
     const raw = nodes[0]?.model?.raw as Record<string, unknown> | undefined
     const rawMatrix =
       (raw?.matrix as number[] | undefined) || (raw?.transform as number[] | undefined)
-
-    if (rawMatrix?.length === 16) {
-      matrix.fromArray(rawMatrix)
-    } else {
-      matrix.setPosition(center)
-    }
+    const hasMatrix = Array.isArray(rawMatrix) && rawMatrix.length === 16
 
     this.detach()
 
     const camera = this.cameraProvider.renderingCamera
-    this.transformControls = new TransformControls(
+    const controls = new TransformControls(
       camera,
-      this.viewer.getContainer()
+      renderer.renderer.domElement
     )
-    this.transformControls.enabled = false
-    this.transformControls.setMode('translate')
-    this.transformControls.setSize(gizmoScale)
-    this.transformControls.layers.set(ObjectLayers.PROPS)
-
-    this.anchor = new Group()
-    this.anchor.applyMatrix4(matrix)
-    if (!rawMatrix?.length) {
-      this.anchor.position.copy(center)
+    // Read-only: show the gizmo but ignore pointer interaction.
+    controls.enabled = false
+    controls.setMode('translate')
+    controls.setSize(gizmoScale)
+    // Layers are NOT recursive in three.js — Speckle's pipeline only renders the
+    // PROPS layer, so every gizmo child object must be assigned to it (mirrors
+    // SectionTool), otherwise the gizmo never renders.
+    for (let k = 0; k < controls._root.children.length; k++) {
+      controls._root.children[k].traverse((obj: { layers: { set: (n: number) => void } }) =>
+        obj.layers.set(ObjectLayers.PROPS)
+      )
     }
 
-    renderer.scene.add(this.transformControls)
-    this.transformControls.attach(this.anchor)
+    const anchor = new Group()
+    if (hasMatrix) {
+      anchor.applyMatrix4(matrix.fromArray(rawMatrix as number[]))
+    } else {
+      anchor.position.copy(center)
+    }
+    anchor.layers.set(ObjectLayers.PROPS)
+    renderer.scene.add(anchor)
+
+    renderer.scene.add(controls._root)
+    controls.attach(anchor)
+
+    this.transformControls = controls
+    this.anchor = anchor
     this.viewer.requestRender()
   }
 
   public onRender(): void {
-    if (this.transformControls?.visible) {
-      this.transformControls.updateMatrixWorld()
-    }
+    this.transformControls?._root?.updateMatrixWorld()
   }
 }
