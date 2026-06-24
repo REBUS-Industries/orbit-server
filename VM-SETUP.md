@@ -5,8 +5,8 @@ VM 201 remains untouched as the legacy Speckle stack.
 
 | VM ID | Role | IP | Hostname |
 |---|---|---|---|
-| 211 | ORBIT PROD + PRISM | 10.0.200.211 | orbit-prod |
-| 212 | ORBIT DEV + PRISM | 10.0.200.212 | orbit-dev |
+| 211 | ORBIT PROD | 10.0.200.211 | orbit-prod |
+| 212 | ORBIT DEV | 10.0.200.212 | orbit-dev |
 
 ---
 
@@ -204,11 +204,9 @@ POSTGRES_PASSWORD=<strong password>
 MINIO_USER=orbitadmin
 MINIO_PASSWORD=<strong password>
 FILE_SIZE_LIMIT_MB=1000
-RHINOCOMPUTE_URL=http://compute.rebus.industries
 ORBIT_SERVER_VERSION=latest
 ORBIT_FRONTEND_VERSION=latest
 ORBIT_PREVIEW_VERSION=latest
-ORBIT_PRISM_VERSION=latest
 ```
 
 ### VM 212 (.env for DEV):
@@ -222,11 +220,9 @@ POSTGRES_PASSWORD=<strong password — different from prod>
 MINIO_USER=orbitadmin
 MINIO_PASSWORD=<strong password — different from prod>
 FILE_SIZE_LIMIT_MB=1000
-RHINOCOMPUTE_URL=http://compute.rebus.industries
 ORBIT_SERVER_VERSION=latest
 ORBIT_FRONTEND_VERSION=latest
 ORBIT_PREVIEW_VERSION=latest
-ORBIT_PRISM_VERSION=latest
 ```
 
 Generate a secure SESSION_SECRET on each VM:

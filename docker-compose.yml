@@ -1,7 +1,7 @@
 version: "3.9"
 
 # ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
-# Includes: ORBIT platform + PRISM file conversion service
+# Includes: ORBIT platform (PRISM runs on separate infra — not in this stack)
 # ORBIT server stack — built on open-source Speckle Server foundations.
 # All credentials are loaded from .env â€” never commit .env to Git.
 
@@ -161,30 +161,6 @@ services:
     depends_on:
       - orbit-server
 
-  # â”€â”€ PRISM â€” File Conversion Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Handles DWG / FBX / IFC / OBJ â†’ ORBIT objects
-  # Shares Valkey with the rest of the stack for job queue
-  prism:
-    image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
-    pull_policy: if_not_present
-    restart: unless-stopped
-    ports:
-      - "8765:8765"
-    environment:
-      RHINOCOMPUTE_URL: ${RHINOCOMPUTE_URL:-http://compute.rebus.industries}
-      ORBIT_SERVER_URL: http://orbit-server:3000
-      REDIS_URL:        redis://redis
-      PORT:             8765
-    depends_on:
-      orbit-server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health', timeout=3)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
   # ORBIT API docs — markdown reference at /docs (see docs/README.md)
   orbit-docs:
