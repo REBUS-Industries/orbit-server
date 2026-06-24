@@ -53,10 +53,12 @@ services:
   # â”€â”€ ORBIT Frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Image: ghcr.io/rebus-orbit/orbit-frontend (built from REBUS-ORBIT/orbit-server source)
   orbit-frontend:
-    # camera-default patch: front-facing default view; image built on the VM
-    # via ./patches/orbit-frontend/build-patched.sh (docker commit; see its README).
+    build:
+      context: ./frontend
+      args:
+        SPECKLE_UPSTREAM_COMMIT: ${SPECKLE_UPSTREAM_COMMIT:-d3854d45a23649b50d3a2ce3c4868de211769bda}
     image: orbit-frontend-patched:${ORBIT_FRONTEND_VERSION:-latest}
-    pull_policy: never
+    pull_policy: build
     restart: unless-stopped
     environment:
       NUXT_PUBLIC_SERVER_NAME:         ${SERVER_NAME:-ORBIT}

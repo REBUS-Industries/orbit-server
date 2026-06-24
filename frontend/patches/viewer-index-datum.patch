@@ -1,0 +1,18 @@
+--- a/packages/viewer/src/index.ts
++++ b/packages/viewer/src/index.ts
+@@ -158,6 +158,7 @@
+   SectionToolEvent,
+   SectionToolEventPayload
+ } from './modules/extensions/sections/SectionTool.js'
++import { DatumGizmoExtension } from './modules/extensions/DatumGizmoExtension.js'
+ import { WebXrViewer } from './modules/WebXrViewer.js'
+ import { StencilMaskPass } from './modules/pipeline/Passes/StencilMaskPass.js'
+ import {
+@@ -214,6 +215,7 @@
+   SelectionExtension,
+   CameraController,
+   SectionTool,
++  DatumGizmoExtension,
+   SectionOutlines,
+   MeasurementsExtension,
+   FilteringExtension,
