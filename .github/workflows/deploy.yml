@@ -8,22 +8,27 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+# GitHub-hosted runners cannot reach VM 211 (10.0.200.211) — they time out on SSH.
+# Deploy runs on a self-hosted runner inside the REBUS network; that runner SSHs
+# to VM 211 using PROD_VM_* secrets (same as before, different runner placement).
+
 jobs:
   deploy-prod:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, orbit-deploy]
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to VM 211 (ORBIT PROD — 10.0.200.211)
+      - name: Deploy to VM 211 via SSH
         uses: appleboy/ssh-action@v1
         with:
           host:     ${{ secrets.PROD_VM_HOST }}
           username: ${{ secrets.PROD_VM_USER }}
           key:      ${{ secrets.PROD_VM_SSH_KEY }}
+          command_timeout: 120m
           script: |
-            set -e
+            set -euo pipefail
             cd /opt/orbit/server
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             docker compose pull --ignore-buildable
             docker compose build --pull orbit-server orbit-frontend
             docker compose up -d --remove-orphans

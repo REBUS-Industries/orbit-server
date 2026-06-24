@@ -1,11 +1,11 @@
 --- a/packages/viewer/src/modules/extensions/CameraController.ts
 +++ b/packages/viewer/src/modules/extensions/CameraController.ts
 @@ -209,7 +209,7 @@
- 
    public default() {
-     if (this._activeControls) {
+     if (this._activeControls instanceof SmoothOrbitControls) {
+       this._activeControls.up = new Vector3(0, 0, 1)
 -      this._activeControls.setOrbit(2.356, 0.955)
 +      this._activeControls.setOrbit(5.498, 0.955)
+       this._activeControls.jumpToGoal()
      }
    }
- 
