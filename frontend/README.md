@@ -1,20 +1,15 @@
-# ORBIT Frontend — source-built image
+# ORBIT Frontend — source-built image (BRANDED)
 
-Builds `orbit-frontend-patched` from the Speckle FE2 source (read-only upstream
-`CheekiSkrub/speckle-server-dev` at a pinned commit) plus ORBIT overlay patches in
-`overlays/`.
+Builds `orbit-frontend-patched` from the **ORBIT-branded** Speckle fork source:
+`CheekiSkrub/speckle-server-dev` (read-only) at branch **`rebus-dev`**, pinned by
+commit in `UPSTREAM_COMMIT` / the `ORBIT_FRONTEND_SOURCE_COMMIT` build arg.
 
-## Features in this overlay
-
-1. **Expand all selection data** — the right-hand "Selected" panel can expand
-   object arrays (e.g. `@instanceDefinitionProxies object array (4)`) and provides
-   Expand all / Collapse controls in the sidebar header.
-2. **Instance proxy meshes in layer tree** — WorldTree children under instance
-   proxies (transform → instanced meshes) appear in the left Models panel and are
-   individually selectable.
-3. **Datum gimbal toggle** — viewer control (Axis3D icon, right toolbar) shows a
-   read-only transform gizmo at the selection datum (instance transform matrix or
-   selection bbox centre).
+> IMPORTANT: this MUST build from `rebus-dev` (or a `REBUS-v*` tag), which carries
+> the ORBIT branding (`orbit_logo.png`, the "ORBIT" wordmark, the Version/Login
+> panels) and the custom viewer (`setup.ts`, object-sidebar labels, geometry/
+> material converters). Building from the fork's `main` branch produces STOCK
+> upstream Speckle with **no ORBIT branding** — that was the cause of the
+> "it looks like Speckle again" regression.
 
 ## Build (VM or any Docker host)
 
@@ -24,19 +19,28 @@ docker compose build orbit-frontend
 docker compose up -d --no-deps orbit-frontend
 ```
 
-On deploy, the org self-hosted runner (`self-hosted`, `Linux`, `X64`) SSHs to VM 211 and runs
-`docker compose build orbit-frontend` (see `.github/workflows/deploy.yml`).
+On deploy, the org self-hosted runner (`self-hosted`, `Linux`, `X64`) SSHs to VM 211
+and runs `scripts/deploy.sh`, which builds `orbit-frontend` from this context.
+The first build can take 20–40 minutes.
 
-## Upstream pin
+## Source pin
 
-Commit hash is recorded in `UPSTREAM_COMMIT`. Override at build time:
+The branded source commit is recorded in `UPSTREAM_COMMIT`. Override at build time:
 
 ```sh
-SPECKLE_UPSTREAM_COMMIT=d3854d45a23649b50d3a2ce3c4868de211769bda docker compose build orbit-frontend
+ORBIT_FRONTEND_SOURCE_COMMIT=<rebus-dev commit> docker compose build orbit-frontend
 ```
+
+## Parked: viewer feature overlays
+
+`overlays/` and `patches/` hold work-in-progress viewer features (expand-all
+selection data, instance-proxy mesh tree, datum gimbal). They are **not applied**
+by the current `Dockerfile` — they were written against stock `main` and the datum
+gizmo is not yet working. They will be re-derived against the branded `rebus-dev`
+source and re-enabled in a separate, verified PR. Do not wire them back into the
+build until then.
 
 ## Legacy minified patch path
 
-`patches/orbit-frontend/build-patched.sh` remains for hotfixes on prebuilt GHCR
-images when a full source rebuild is not practical. New viewer features should land
-here in `frontend/overlays/` instead.
+`../patches/orbit-frontend/build-patched.sh` layers minified-bundle hotfixes onto a
+prebuilt GHCR image via `docker commit`. Superseded by this branded source build.
