@@ -125,6 +125,7 @@ services:
   # Image: ghcr.io/rebus-orbit/orbit-preview
   orbit-preview:
     image: ghcr.io/rebus-orbit/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
+    pull_policy: if_not_present
     restart: unless-stopped
     environment:
       PORT:         3001
@@ -165,6 +166,7 @@ services:
   # Shares Valkey with the rest of the stack for job queue
   prism:
     image: ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}
+    pull_policy: if_not_present
     restart: unless-stopped
     ports:
       - "8765:8765"

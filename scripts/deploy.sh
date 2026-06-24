@@ -39,6 +39,6 @@ else
 fi
 
 docker compose build orbit-frontend
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans --pull never
 docker image prune -f
 echo "Deploy complete: $(date)"
