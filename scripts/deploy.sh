@@ -39,6 +39,14 @@ else
 fi
 
 docker compose build orbit-frontend
-docker compose up -d --remove-orphans --pull never
+
+PRISM_IMAGE="ghcr.io/rebus-orbit/orbit-prism:${ORBIT_PRISM_VERSION:-latest}"
+if docker image inspect "${PRISM_IMAGE}" >/dev/null 2>&1; then
+  docker compose up -d --remove-orphans --pull never
+else
+  echo "Note: ${PRISM_IMAGE} not cached — skipping prism (add GHCR_TOKEN to .env to pull)"
+  mapfile -t UP_SERVICES < <(docker compose config --services | grep -v '^prism$')
+  docker compose up -d --remove-orphans --pull never "${UP_SERVICES[@]}"
+fi
 docker image prune -f
 echo "Deploy complete: $(date)"
