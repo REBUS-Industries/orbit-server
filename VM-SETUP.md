@@ -260,11 +260,17 @@ Deploy uses the **existing REBUS-Industries org self-hosted runner** (`self-host
 The workflow (`.github/workflows/deploy.yml`) SSHs to VM 211 via `PROD_VM_*` secrets and
 runs `docker compose build/up` in `/opt/orbit/server`. No additional runner setup required.
 
-Manual deploy on the VM:
+Manual deploy on the VM (run as the user that owns `/opt/orbit/server`, usually `orbit`):
 
 ```bash
-ssh dom@10.0.200.211
-cd /opt/orbit/server && git pull origin main && ./scripts/deploy.sh
+ssh orbit@10.0.200.211
+cd /opt/orbit/server && ./scripts/deploy.sh
+```
+
+If you SSH in as another user (e.g. `dom`), use:
+
+```bash
+sudo -u orbit bash /opt/orbit/server/scripts/deploy.sh
 ```
 
 The first frontend source build may take 20–40 minutes (`docker compose build orbit-frontend`).
