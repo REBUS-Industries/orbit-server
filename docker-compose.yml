@@ -53,12 +53,12 @@ services:
   # â”€â”€ ORBIT Frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Image: ghcr.io/rebus-orbit/orbit-frontend (built from REBUS-ORBIT/orbit-server source)
   orbit-frontend:
-    build:
-      context: ./frontend
-      args:
-        SPECKLE_UPSTREAM_COMMIT: ${SPECKLE_UPSTREAM_COMMIT:-d3854d45a23649b50d3a2ce3c4868de211769bda}
+    # CUSTOM ORBIT frontend (branded fork), NOT stock Speckle. The image is the
+    # prebuilt ghcr.io/rebus-orbit/orbit-frontend:<ver> derived on the VM via
+    # ./patches/orbit-frontend/build-patched.sh (docker commit). Do NOT replace
+    # this with a stock-upstream source build — that strips all ORBIT branding.
     image: orbit-frontend-patched:${ORBIT_FRONTEND_VERSION:-latest}
-    pull_policy: build
+    pull_policy: never
     restart: unless-stopped
     environment:
       NUXT_PUBLIC_SERVER_NAME:         ${SERVER_NAME:-ORBIT}
