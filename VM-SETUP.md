@@ -252,29 +252,37 @@ docker compose logs orbit-server --tail 50
 
 ---
 
-## Step 12 — Set up auto-deploy (self-hosted runner)
+## Step 12 — Set up auto-deploy (self-hosted runner + SSH)
 
-GitHub-hosted runners **cannot reach** VM 211 on `10.0.200.211` (private network).
-Deploy uses a **self-hosted Actions runner** on the VM instead of SSH from GitHub.
+GitHub-hosted runners **cannot reach** VM 211 on `10.0.200.211` (private network) — SSH
+times out with `dial tcp :22: i/o timeout`.
 
-### 12a — Install the runner (once, on VM 211)
+Deploy uses a **self-hosted Actions runner on the internal network** (any host that can
+`ssh dom@10.0.200.211`). The runner job SSHs into VM 211 and runs the deploy commands there.
+
+### 12a — Install the deploy runner (once, on an internal host)
+
+Pick a machine with route to `10.0.200.211` (e.g. a Proxmox admin host, jump box, or
+lightweight LXC). It does **not** need Docker — only outbound HTTPS to GitHub and SSH to the VM.
 
 ```bash
-# On VM 211 as the deploy user (e.g. dom)
+# On the internal deploy runner host (NOT necessarily VM 211)
 mkdir -p ~/actions-runner && cd ~/actions-runner
-# Download latest linux x64 runner from https://github.com/actions/runner/releases
 curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-2.321.0.tar.gz
 tar xzf actions-runner.tar.gz
 # Token: GitHub → orbit-server → Settings → Actions → Runners → New self-hosted runner
-./config.sh --url https://github.com/REBUS-Industries/orbit-server --token YOUR_TOKEN --labels orbit-prod --unattended
-sudo ./svc.sh install dom
+./config.sh --url https://github.com/REBUS-Industries/orbit-server \
+  --token YOUR_TOKEN --labels orbit-deploy --unattended
+sudo ./svc.sh install
 sudo ./svc.sh start
 ```
 
-The workflow (`.github/workflows/deploy.yml`) runs on `[self-hosted, orbit-prod]` and executes
-`scripts/deploy.sh` logic after syncing `/opt/orbit/server`.
+Ensure the runner process can use the deploy SSH key (same key as `PROD_VM_SSH_KEY`).
 
-### 12b — Manual deploy (use this until the runner is registered)
+The workflow (`.github/workflows/deploy.yml`) runs on `[self-hosted, orbit-deploy]` and
+uses `appleboy/ssh-action` with `PROD_VM_HOST` / `PROD_VM_USER` / `PROD_VM_SSH_KEY`.
+
+### 12b — Manual deploy (always works without the runner)
 
 ```bash
 ssh dom@10.0.200.211
@@ -286,7 +294,6 @@ git pull origin main
 The first frontend source build may take 20–40 minutes (`docker compose build orbit-frontend`).
 
 ```bash
-# Confirm the deploy script is executable
 chmod +x /opt/orbit/server/scripts/deploy.sh
 ```
 
@@ -329,5 +336,5 @@ systemctl reload caddy
 - [ ] `curl http://10.0.200.211/api/v1/info` returns ORBIT server info
 - [ ] https://orbit.rebus.industries loads in browser (after Caddy update)
 - [ ] https://orbit-dev.rebus.industries loads in browser
-- [ ] GitHub Actions self-hosted runner `orbit-prod` shows **Idle** on VM 211
+- [ ] GitHub Actions self-hosted runner `orbit-deploy` shows **Idle** (internal host with SSH to VM 211)
 - [ ] Push to `main` triggers deploy workflow successfully (or manual `./scripts/deploy.sh` works)

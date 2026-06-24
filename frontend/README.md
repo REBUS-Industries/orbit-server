@@ -24,9 +24,9 @@ docker compose build orbit-frontend
 docker compose up -d --no-deps orbit-frontend
 ```
 
-On deploy, a self-hosted runner on VM 211 runs `docker compose build --pull orbit-server orbit-frontend`
-after `git pull` (see `.github/workflows/deploy.yml`). Until that runner is registered, deploy
-manually with `./scripts/deploy.sh` on the VM.
+On deploy, a self-hosted runner on the internal network SSHs to VM 211 and runs
+`docker compose build --pull orbit-server orbit-frontend` (see `.github/workflows/deploy.yml`).
+Until that runner is registered, deploy manually with `./scripts/deploy.sh` on the VM.
 
 ## Upstream pin
 

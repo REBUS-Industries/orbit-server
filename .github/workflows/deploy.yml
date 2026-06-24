@@ -8,24 +8,30 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-# Deploy runs on a self-hosted runner installed on VM 211 (internal IP
-# 10.0.200.211). GitHub-hosted runners cannot SSH to private RFC1918 addresses —
-# the previous appleboy/ssh-action approach timed out with "dial tcp :22: i/o timeout".
+# GitHub-hosted runners cannot reach VM 211 (10.0.200.211) — they time out on SSH.
+# Deploy runs on a self-hosted runner inside the REBUS network; that runner SSHs
+# to VM 211 using PROD_VM_* secrets (same as before, different runner placement).
 
 jobs:
   deploy-prod:
-    runs-on: [self-hosted, orbit-prod]
+    runs-on: [self-hosted, orbit-deploy]
     timeout-minutes: 120
     steps:
-      - name: Sync repo and deploy stack
-        run: |
-          set -euo pipefail
-          cd /opt/orbit/server
-          git fetch origin main
-          git reset --hard origin/main
-          docker compose pull --ignore-buildable
-          docker compose build --pull orbit-server orbit-frontend
-          docker compose up -d --remove-orphans
-          docker image prune -f
-          echo "✓ ORBIT PROD deploy complete: $(date)"
-          docker compose ps
+      - name: Deploy to VM 211 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.PROD_VM_HOST }}
+          username: ${{ secrets.PROD_VM_USER }}
+          key:      ${{ secrets.PROD_VM_SSH_KEY }}
+          command_timeout: 120m
+          script: |
+            set -euo pipefail
+            cd /opt/orbit/server
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose pull --ignore-buildable
+            docker compose build --pull orbit-server orbit-frontend
+            docker compose up -d --remove-orphans
+            docker image prune -f
+            echo "✓ ORBIT PROD deploy complete: $(date)"
+            docker compose ps
