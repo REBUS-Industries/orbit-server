@@ -298,6 +298,9 @@ Paste the **entire** private key file (including `-----BEGIN/END OPENSSH PRIVATE
 into each secret. The matching public key must be in `dom`’s `~/.ssh/authorized_keys` on both VMs
 (see Step 6).
 
+For GHCR image pulls/builds on the VM, add `GHCR_TOKEN=<PAT with read:packages>` to `/opt/orbit/server/.env`
+(or use `NUGET_TOKEN` — same PAT). `scripts/deploy.sh` runs `docker login ghcr.io` when either is set.
+
 ---
 
 ## Step 14 — Update external Caddy proxy

@@ -31,7 +31,7 @@ for svc in orbit-preview prism; do
   docker compose pull "$svc" || echo "Note: could not pull ${svc} (using local image if present)"
 done
 
-docker compose build --pull orbit-server orbit-frontend
+docker compose build orbit-server orbit-frontend
 docker compose up -d --remove-orphans
 docker image prune -f
 echo "Deploy complete: $(date)"
