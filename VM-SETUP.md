@@ -289,10 +289,14 @@ In the ORBIT-Server repo → Settings → Secrets → Actions, update or add:
 |---|---|
 | `PROD_VM_HOST` | `10.0.200.211` |
 | `PROD_VM_USER` | `dom` |
-| `PROD_VM_SSH_KEY` | (already set) |
+| `PROD_VM_SSH_KEY` | Full PEM of `id_ed25519_rebus` (fingerprint `SHA256:tLLwaEfPgk23cBEdPAYVUNDvX6dxbqVlU1TeEe90Md8`, comment `dom@rebus-vms-2026-04-27`) |
 | `DEV_VM_HOST` | `10.0.200.212` |
 | `DEV_VM_USER` | `dom` |
-| `DEV_VM_SSH_KEY` | (already set) |
+| `DEV_VM_SSH_KEY` | Same private key as prod |
+
+Paste the **entire** private key file (including `-----BEGIN/END OPENSSH PRIVATE KEY-----` lines)
+into each secret. The matching public key must be in `dom`’s `~/.ssh/authorized_keys` on both VMs
+(see Step 6).
 
 ---
 
