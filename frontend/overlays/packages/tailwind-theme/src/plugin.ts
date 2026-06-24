@@ -35,7 +35,7 @@ export const lightThemeVariables = {
   '--outline-1': '#E06238',
   '--outline-2': '#DFDFDF',
   '--outline-3': '#E2E8F0',
-  '--outline-4': '#4B40C9',
+  '--outline-4': '#E06238',
   '--outline-5': '#C4C4C4',
 
   /* highlight variations */
@@ -101,7 +101,7 @@ export const darkThemeVariables = {
   '--outline-1': '#E06238',
   '--outline-2': '#2E313F',
   '--outline-3': '#282833',
-  '--outline-4': '#4B40C9',
+  '--outline-4': '#E06238',
   '--outline-5': '#434559',
 
   /* highlight variations */
@@ -123,8 +123,8 @@ export const darkThemeVariables = {
 
   /* info variations */
   '--info': '#B8C0CC',
-  '--info-lighter': '#0043B2',
-  '--info-lightest': '#0043B2',
+  '--info-lighter': '#E06238',
+  '--info-lightest': '#E06238',
   '--info-darker': '#6B7D99',
 
   /* danger variations */
