@@ -31,7 +31,14 @@ for svc in orbit-preview prism; do
   docker compose pull "$svc" || echo "Note: could not pull ${svc} (using local image if present)"
 done
 
-docker compose build orbit-server orbit-frontend
+SERVER_IMAGE="orbit-server-patched:${ORBIT_SERVER_VERSION:-latest}"
+if docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1; then
+  echo "Using existing ${SERVER_IMAGE} (skip rebuild; set ORBIT_SERVER_VERSION or prune image to force)"
+else
+  docker compose build orbit-server
+fi
+
+docker compose build orbit-frontend
 docker compose up -d --remove-orphans
 docker image prune -f
 echo "Deploy complete: $(date)"
