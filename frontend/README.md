@@ -50,6 +50,16 @@ commit:
 If you bump `ORBIT_FRONTEND_SOURCE_COMMIT`, re-verify the patches apply (a fork
 sync can move the patched lines) before deploying.
 
+### ORBIT brand theme
+
+`overlays/packages/tailwind-theme/src/plugin.ts` overrides Speckle's theme tokens
+with the ORBIT palette (from the ORBIT portal): orange primary `#E06238`
+(hover `#CF4C20`), orange focus/outline, and portal-matched dark backgrounds
+(`--foundation-page #0D0D0D`, `--foundation #141414`). `overlays/.../core/composables/theme.ts`
+defaults the app to the **dark** theme (light only when explicitly chosen), to
+match the portal. Speckle has no colour theme in its source — these tokens are the
+single source of brand colour, so adjust them here to retune ORBIT colours.
+
 ## Legacy minified patch path
 
 `../patches/orbit-frontend/build-patched.sh` layers minified-bundle hotfixes onto a
