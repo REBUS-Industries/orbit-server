@@ -8,13 +8,13 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-# GitHub-hosted runners cannot reach VM 211 (10.0.200.211) — they time out on SSH.
-# Deploy runs on a self-hosted runner inside the REBUS network; that runner SSHs
-# to VM 211 using PROD_VM_* secrets (same as before, different runner placement).
+# GitHub-hosted runners cannot reach VM 211 (10.0.200.211). Use the existing
+# org self-hosted runner (RB-DA2-Runner1: self-hosted, Linux, X64) — same as
+# orbit-connectors diagnose-prod-blobs.yml — then SSH via PROD_VM_* secrets.
 
 jobs:
   deploy-prod:
-    runs-on: [self-hosted, orbit-deploy]
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 120
     steps:
       - name: Deploy to VM 211 via SSH
