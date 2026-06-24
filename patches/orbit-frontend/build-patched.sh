@@ -20,8 +20,11 @@
 # compression + hashing is done with the image's own node (zlib + crypto).
 set -eu
 VER="${ORBIT_FRONTEND_VERSION:-v2.4.9}"
-BASE="ghcr.io/rebus-orbit/orbit-frontend:${VER}"
-TARGET="orbit-frontend-patched:${VER}"
+# Base may be overridden (e.g. ghcr.io/cheekiskrub/orbit-frontend:<ver>) by the
+# caller after it has located a usable branded base image. Defaults to the
+# canonical REBUS-ORBIT GHCR path.
+BASE="${ORBIT_FRONTEND_BASE:-ghcr.io/rebus-orbit/orbit-frontend:${VER}}"
+TARGET="${ORBIT_FRONTEND_TARGET:-orbit-frontend-patched:${VER}}"
 WORK="$(mktemp -d)"
 cleanup(){ docker rm -f fe-x fe-build >/dev/null 2>&1 || true; rm -rf "$WORK"; }
 trap cleanup EXIT
