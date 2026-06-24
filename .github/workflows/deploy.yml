@@ -8,9 +8,9 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-# GitHub-hosted runners cannot reach VM 211 (10.0.200.211). Use the existing
-# org self-hosted runner (RB-DA2-Runner1: self-hosted, Linux, X64) — same as
-# orbit-connectors diagnose-prod-blobs.yml — then SSH via PROD_VM_* secrets.
+# Org self-hosted runner (self-hosted, Linux, X64) SSHs to VM 211. /opt/orbit/server
+# is owned by the orbit user — run scripts/deploy.sh via sudo -u orbit so git pull
+# can write .git/ (PROD_VM_USER is typically dom and lacks repo write access).
 
 jobs:
   deploy-prod:
@@ -26,12 +26,6 @@ jobs:
           command_timeout: 120m
           script: |
             set -euo pipefail
-            cd /opt/orbit/server
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose pull --ignore-buildable
-            docker compose build --pull orbit-server orbit-frontend
-            docker compose up -d --remove-orphans
-            docker image prune -f
-            echo "✓ ORBIT PROD deploy complete: $(date)"
-            docker compose ps
+            REPO=/opt/orbit/server
+            DEPLOY_USER=$(stat -c '%U' "${REPO}/.git")
+            sudo -u "${DEPLOY_USER}" bash "${REPO}/scripts/deploy.sh"
