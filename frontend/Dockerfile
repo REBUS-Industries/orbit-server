@@ -41,6 +41,25 @@ RUN apt-get update -y \
 
 COPY --from=fetch-upstream /src/speckle-server/ .
 
+# ORBIT viewer overlays + patches on top of the branded source:
+#  - camera-default: models open front-facing (azimuth 5.498)
+#  - @elements: layer-collection children render in the model tree (tree.ts),
+#    no spurious "elements Array Collection" node — matches prod v2.4.9 behaviour
+#  - expand-all selection data, instance-proxy mesh tree, datum gizmo toggle
+COPY overlays/packages/ ./packages/
+COPY patches/ ./patches/
+RUN apt-get update -y \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends patch=2.7.6-7 \
+  && patch -p1 < patches/setup-datum.patch \
+  && patch -p1 < patches/postSetup-datum.patch \
+  && patch -p1 < patches/ui-datum.patch \
+  && patch -p1 < patches/viewer-index-datum.patch \
+  && patch -p1 < patches/camera-default.patch \
+  && apt-get remove -y patch \
+  && apt-get autoremove -y \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
 ARG NODE_ENV
 ENV NODE_ENV=${NODE_ENV}
 RUN PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 yarn workspaces focus -A

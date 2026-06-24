@@ -31,14 +31,24 @@ The branded source commit is recorded in `UPSTREAM_COMMIT`. Override at build ti
 ORBIT_FRONTEND_SOURCE_COMMIT=<rebus-dev commit> docker compose build orbit-frontend
 ```
 
-## Parked: viewer feature overlays
+## Viewer overlays + patches (applied)
 
-`overlays/` and `patches/` hold work-in-progress viewer features (expand-all
-selection data, instance-proxy mesh tree, datum gimbal). They are **not applied**
-by the current `Dockerfile` — they were written against stock `main` and the datum
-gizmo is not yet working. They will be re-derived against the branded `rebus-dev`
-source and re-enabled in a separate, verified PR. Do not wire them back into the
-build until then.
+`overlays/` and `patches/` are applied on top of the branded source by the
+`Dockerfile`, and are verified to apply cleanly against the pinned `rebus-dev`
+commit:
+
+- `patches/camera-default.patch` — models open front-facing (azimuth 5.498).
+- `tree.ts` overlay — `@elements` layer-collection children render in the model
+  tree (and no spurious "elements Array Collection" node). This reproduces the
+  prod `v2.4.9` `build-patched.sh` `@elements` behaviour at source level.
+- expand-all selection data (`Object.vue` / `Sidebar.vue` / `panelExpand.ts`).
+- instance-proxy mesh tree (`tree.ts`).
+- datum gizmo toggle (`controls/Right.vue` + `ui.ts` + `DatumGizmoExtension.ts`),
+  rendered via the same `ObjectLayers.PROPS` path as `SectionTool` so the gizmo
+  actually draws in Speckle's render pipeline.
+
+If you bump `ORBIT_FRONTEND_SOURCE_COMMIT`, re-verify the patches apply (a fork
+sync can move the patched lines) before deploying.
 
 ## Legacy minified patch path
 
