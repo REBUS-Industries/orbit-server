@@ -1,0 +1,30 @@
+--- a/packages/frontend-2/lib/viewer/composables/ui.ts
++++ b/packages/frontend-2/lib/viewer/composables/ui.ts
+@@ -6,7 +6,8 @@
+   type CanonicalView,
+   type InlineView,
+   type SpeckleView,
+-  MeasurementsExtension
++  MeasurementsExtension,
++  DatumGizmoExtension
+ } from '@speckle/viewer'
+ import { Box3, Vector3, Matrix3 } from 'three'
+ import { OBB } from 'three/examples/jsm/math/OBB'
+@@ -624,3 +625,16 @@
+     getShortcutDisplayText
+   }
+ }
++
++export function useDatumGizmoUtilities() {
++  const { instance } = useInjectedViewer()
++  const enabled = ref(false)
++
++  const extension = computed(() => instance.getExtension(DatumGizmoExtension))
++
++  const toggleDatumGizmo = () => {
++    enabled.value = !enabled.value
++    extension.value?.setVisible(enabled.value)
++  }
++
++  return { enabled, toggleDatumGizmo }
++}

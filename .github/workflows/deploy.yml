@@ -2,6 +2,8 @@ name: Deploy ORBIT Server
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -22,7 +24,8 @@ jobs:
             set -e
             cd /opt/orbit/server
             git pull origin main
-            docker compose pull
+            docker compose pull --ignore-buildable
+            docker compose build --pull orbit-server orbit-frontend
             docker compose up -d --remove-orphans
             docker image prune -f
             echo "✓ ORBIT PROD deploy complete: $(date)"
