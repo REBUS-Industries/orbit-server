@@ -46,6 +46,11 @@ commit:
 - datum gizmo toggle (`controls/Right.vue` + `ui.ts` + `DatumGizmoExtension.ts`),
   rendered via the same `ObjectLayers.PROPS` path as `SectionTool` so the gizmo
   actually draws in Speckle's render pipeline.
+- fixture custom display name (`lib/object-sidebar/helpers.ts`): the selected-object
+  label prefers a PRISM fixture's pretty `displayName` over the canonical `name`
+  (rule `displayName ?? name`), reading `displayName` / `properties.displayName` /
+  `metadata.displayName`. Falls back to `name` for non-fixtures and old models.
+  See prism-fixtures-service `docs/handoffs/DISPLAY_NAME_ORBIT.md`.
 
 If you bump `ORBIT_FRONTEND_SOURCE_COMMIT`, re-verify the patches apply (a fork
 sync can move the patched lines) before deploying.
