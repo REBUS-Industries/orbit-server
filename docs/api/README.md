@@ -7,7 +7,6 @@ ORBIT is a self-hosted 3D data platform (Speckle Server–derived). Most integra
 | Environment | URL |
 |---|---|
 | Production | `https://orbit.rebus.industries` |
-| Development | `https://orbit-dev.rebus.industries` |
 
 ## Endpoints
 

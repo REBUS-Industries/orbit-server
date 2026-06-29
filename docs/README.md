@@ -20,7 +20,7 @@ DOCS_DIR=../docs/api PUBLIC_BASE_URL=http://localhost:3080 node server.mjs
 
 ## Production deploy
 
-The docs ship as part of the ORBIT server stack on VM 211/212:
+The docs ship as part of the ORBIT server stack on VM 211:
 
 1. Commit changes to `docs/api/` and `docs-server/`.
 2. On the VM (`/opt/orbit/server`), `git pull origin main`.

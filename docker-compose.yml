@@ -1,6 +1,6 @@
 version: "3.9"
 
-# ORBIT Server Docker Stack â€” VM 211 (prod) / VM 212 (dev)
+# ORBIT Server Docker Stack â€” VM 211 (prod)
 # Includes: ORBIT platform (PRISM runs on separate infra — not in this stack)
 # ORBIT server stack — built on open-source Speckle Server foundations.
 # All credentials are loaded from .env â€” never commit .env to Git.

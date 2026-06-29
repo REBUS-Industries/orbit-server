@@ -2,7 +2,7 @@
 
 GraphQL endpoint: `POST {BASE_URL}/graphql`
 
-All examples use production base URL. Replace with `https://orbit-dev.rebus.industries` for dev.
+All examples use the production base URL.
 
 ## Server metadata
 

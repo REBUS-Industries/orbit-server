@@ -34,7 +34,7 @@ Patches do **not** change comment behaviour. `allowPublicComments` is standard u
 
 ## Deployment
 
-- Docs require `docker compose up -d --build orbit-docs` on VM 211/212 after pulling repo changes.
+- Docs require `docker compose up -d --build orbit-docs` on VM 211 after pulling repo changes.
 - Docs are **not** in the upstream GHCR server image; they ship from this repo's `docs-server` build context.
 - External HA proxy (LXC 251/252) needs no change — `/docs` routes through internal Caddy on port 80.
 
