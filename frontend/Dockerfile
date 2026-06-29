@@ -46,6 +46,8 @@ COPY --from=fetch-upstream /src/speckle-server/ .
 #  - @elements: layer-collection children render in the model tree (tree.ts),
 #    no spurious "elements Array Collection" node — matches prod v2.4.9 behaviour
 #  - expand-all selection data, instance-proxy mesh tree, datum gizmo toggle
+#  - named-views-view3d: restore the connector's View3D named views in the
+#    Camera Controls menu (built from the root object's `views` array)
 COPY overlays/packages/ ./packages/
 COPY patches/ ./patches/
 RUN apt-get update -y \
@@ -55,6 +57,7 @@ RUN apt-get update -y \
   && patch -p1 < patches/ui-datum.patch \
   && patch -p1 < patches/viewer-index-datum.patch \
   && patch -p1 < patches/camera-default.patch \
+  && patch -p1 < patches/named-views-view3d.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
   && apt-get clean \
