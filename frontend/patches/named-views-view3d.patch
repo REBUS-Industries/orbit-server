@@ -1,0 +1,56 @@
+--- a/packages/frontend-2/lib/viewer/composables/setup.ts
++++ b/packages/frontend-2/lib/viewer/composables/setup.ts
+@@ -516,6 +516,36 @@
+                 if (camId && camPos && camPos.x != null && camPos.y != null && camPos.z != null) {
+                   cameraPositionMap.set(camId, { x: camPos.x, y: camPos.y, z: camPos.z })
+                 }
++
++                // ORBIT V2 named views: Objects.BuiltElements.View.View3D carries
++                // origin/target inline on the root object's `views` array, so the
++                // exact coordinates survive here (objectloader2 strips them from the
++                // in-tree copy). Build SpeckleViews directly from those coordinates.
++                const camType = cam.speckle_type as string | undefined
++                const camOrigin = cam.origin as Record<string, number> | null | undefined
++                const camTarget = cam.target as Record<string, number> | null | undefined
++                if (
++                  camId &&
++                  camType &&
++                  camType.includes('View3D') &&
++                  camOrigin &&
++                  camTarget &&
++                  camOrigin.x != null &&
++                  camOrigin.y != null &&
++                  camOrigin.z != null &&
++                  camTarget.x != null &&
++                  camTarget.y != null &&
++                  camTarget.z != null
++                ) {
++                  v3Views.push({
++                    id: camId,
++                    speckle_type: camType,
++                    applicationId: cam.applicationId as string | undefined,
++                    name: (cam.name as string) ?? camId,
++                    origin: { x: camOrigin.x, y: camOrigin.y, z: camOrigin.z },
++                    target: { x: camTarget.x, y: camTarget.y, z: camTarget.z }
++                  } as unknown as SpeckleView)
++                }
+               }
+             }
+           }
+@@ -570,7 +600,15 @@
+       return true
+     })
+ 
+-    views.value = [...v2Views, ...v3Views]
++    // De-duplicate by id so the authoritative root-fetched named views (with
++    // exact coordinates) win over any in-tree copies whose coordinates may have
++    // been stripped during loading.
++    const mergedViewsById = new Map<string, SpeckleView>()
++    for (const v of [...v2Views, ...v3Views]) {
++      const viewId = (v as { id?: string }).id
++      if (viewId) mergedViewsById.set(viewId, v)
++    }
++    views.value = Array.from(mergedViewsById.values())
+ 
+     // Fix worldBox inflation from Camera geometry sub-objects (Point/Vector),
+     // then hide them from the scene entirely.
