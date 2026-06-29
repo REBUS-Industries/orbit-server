@@ -61,8 +61,6 @@ Authorization: Bearer <ORBIT PAT or PRISM API key>
 Content-Type: application/json
 ```
 
-Dev: `https://prism-dev.rebus.industries/api/orbit/material-swap`
-
 ### Authentication
 
 | Caller | Requirement |

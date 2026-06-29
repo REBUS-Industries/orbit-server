@@ -1,12 +1,11 @@
-# ORBIT VM Setup — VM 211 (Prod) & VM 212 (Dev)
+# ORBIT VM Setup — VM 211 (Prod)
 
-Clone VM 201 twice to create clean ORBIT deployment targets.
+Clone VM 201 to create a clean ORBIT deployment target.
 VM 201 remains untouched as the legacy Speckle stack.
 
 | VM ID | Role | IP | Hostname |
 |---|---|---|---|
 | 211 | ORBIT PROD | 10.0.200.211 | orbit-prod |
-| 212 | ORBIT DEV | 10.0.200.212 | orbit-dev |
 
 ---
 
@@ -23,12 +22,6 @@ qm clone 201 211 \
   --name orbit-prod \
   --full true \
   --storage local-lvm
-
-# Full clone VM 201 → VM 212 (DEV)
-qm clone 201 212 \
-  --name orbit-dev \
-  --full true \
-  --storage local-lvm
 ```
 
 > **Full clone** copies all disk data independently. Do not use linked clones — they share the base disk with VM 201 and would be affected by changes to it.
@@ -42,9 +35,6 @@ Adjust RAM/CPU if needed before first boot. Recommended:
 ```bash
 # Prod (VM 211) — match or exceed VM 201
 qm set 211 --memory 8192 --cores 4
-
-# Dev (VM 212) — lighter
-qm set 212 --memory 4096 --cores 2
 ```
 
 ---
@@ -53,7 +43,6 @@ qm set 212 --memory 4096 --cores 2
 
 ```bash
 qm start 211
-qm start 212
 
 # Wait ~30 seconds, then get a console
 qm terminal 211
@@ -103,26 +92,15 @@ ip addr show
 ping 10.0.1.101   # should reach Proxmox node
 ```
 
-### On VM 212 (via console):
-
-Same steps — set IP to `10.0.200.212/24`.
-
 ---
 
 ## Step 5 — Change hostname
 
 ```bash
-# On VM 211:
 hostnamectl set-hostname orbit-prod
 echo "orbit-prod" > /etc/hostname
 sed -i 's/10.0.200.11/10.0.200.211/g' /etc/hosts
 sed -i 's/speckle-prod\|vm-201/orbit-prod/g' /etc/hosts
-
-# On VM 212:
-hostnamectl set-hostname orbit-dev
-echo "orbit-dev" > /etc/hostname
-sed -i 's/10.0.200.11/10.0.200.212/g' /etc/hosts
-sed -i 's/speckle-prod\|vm-201/orbit-dev/g' /etc/hosts
 ```
 
 ---
@@ -143,7 +121,6 @@ chmod 600 ~/.ssh/authorized_keys
 Test from your machine:
 ```bash
 ssh -i ~/.ssh/id_ed25519_rebus dom@10.0.200.211
-ssh -i ~/.ssh/id_ed25519_rebus dom@10.0.200.212
 ```
 
 ---
@@ -209,23 +186,7 @@ ORBIT_FRONTEND_VERSION=latest
 ORBIT_PREVIEW_VERSION=latest
 ```
 
-### VM 212 (.env for DEV):
-```env
-SERVER_NAME=ORBIT DEV
-SERVER_URL=https://orbit-dev.rebus.industries
-SESSION_SECRET=<generate: openssl rand -hex 32>
-POSTGRES_DB=orbit
-POSTGRES_USER=orbit
-POSTGRES_PASSWORD=<strong password — different from prod>
-MINIO_USER=orbitadmin
-MINIO_PASSWORD=<strong password — different from prod>
-FILE_SIZE_LIMIT_MB=1000
-ORBIT_SERVER_VERSION=latest
-ORBIT_FRONTEND_VERSION=latest
-ORBIT_PREVIEW_VERSION=latest
-```
-
-Generate a secure SESSION_SECRET on each VM:
+Generate a secure SESSION_SECRET on the VM:
 ```bash
 openssl rand -hex 32
 ```
@@ -286,12 +247,9 @@ In the ORBIT-Server repo → Settings → Secrets → Actions, update or add:
 | `PROD_VM_HOST` | `10.0.200.211` |
 | `PROD_VM_USER` | `dom` |
 | `PROD_VM_SSH_KEY` | Full PEM of `id_ed25519_rebus` (fingerprint `SHA256:tLLwaEfPgk23cBEdPAYVUNDvX6dxbqVlU1TeEe90Md8`, comment `dom@rebus-vms-2026-04-27`) |
-| `DEV_VM_HOST` | `10.0.200.212` |
-| `DEV_VM_USER` | `dom` |
-| `DEV_VM_SSH_KEY` | Same private key as prod |
 
 Paste the **entire** private key file (including `-----BEGIN/END OPENSSH PRIVATE KEY-----` lines)
-into each secret. The matching public key must be in `dom`’s `~/.ssh/authorized_keys` on both VMs
+into each secret. The matching public key must be in `dom`’s `~/.ssh/authorized_keys` on the VM
 (see Step 6).
 
 For GHCR image pulls/builds on the VM, add `GHCR_TOKEN=<PAT with read:packages>` to `/opt/orbit/server/.env`
@@ -314,11 +272,8 @@ systemctl reload caddy
 ## Verification checklist
 
 - [ ] `ping 10.0.200.211` from your machine responds
-- [ ] `ping 10.0.200.212` from your machine responds
 - [ ] SSH works: `ssh -i ~/.ssh/id_ed25519_rebus dom@10.0.200.211`
 - [ ] `docker compose ps` on VM 211 shows all containers healthy
-- [ ] `docker compose ps` on VM 212 shows all containers healthy
 - [ ] `curl http://10.0.200.211/api/v1/info` returns ORBIT server info
 - [ ] https://orbit.rebus.industries loads in browser (after Caddy update)
-- [ ] https://orbit-dev.rebus.industries loads in browser
 - [ ] Push to `main` triggers deploy on org runner `[self-hosted, Linux, X64]` (or manual `./scripts/deploy.sh` on VM 211)

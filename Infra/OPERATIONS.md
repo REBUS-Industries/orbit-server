@@ -13,8 +13,7 @@ This document is the primary reference for deploying, maintaining, and troublesh
 | VM ID | Role | Internal IP | Hostname | Status |
 |---|---|---|---|---|
 | 201 | Legacy Speckle (keep running) | 10.0.200.11 | speckle-prod | Live — do not touch |
-| 211 | ORBIT PROD + PRISM | 10.0.200.211 | orbit-prod | Needs provisioning |
-| 212 | PRISM DEV | 10.0.200.212 | orbit-dev | Needs provisioning |
+| 211 | ORBIT PROD + PRISM | 10.0.200.211 | orbit-prod | Live (production) |
 
 ### External Proxy LXCs (HA Caddy pair)
 
@@ -29,7 +28,6 @@ This document is the primary reference for deploying, maintaining, and troublesh
 |---|---|---|
 | `orbit.rebus.industries` | VM 211 | ORBIT production |
 | `prism.rebus.industries` | VM 211:8765 | PRISM API (prod) |
-| `prism-dev.rebus.industries` | VM 212:8765 | PRISM API (dev) |
 | `speckle.rebus.industries` | VM 201 | Legacy — leave alone |
 
 ### Services per VM (Docker stack)
@@ -54,7 +52,7 @@ All traffic enters via the external Caddy pair (LXC 251/252). The internal `Cadd
 
 ### What you need before any deploy
 
-1. **SSH private key** for VM 211 / VM 212 — stored as `PROD_VM_SSH_KEY` / `DEV_VM_SSH_KEY` in GitHub Secrets. Do not commit to Git. The key file is at `Infra/id_ed25519_rebus` locally (never pushed).
+1. **SSH private key** for VM 211 — stored as `PROD_VM_SSH_KEY` in GitHub Secrets. Do not commit to Git. The key file is at `Infra/id_ed25519_rebus` locally (never pushed).
 2. **GHCR read access** — images are pulled from `ghcr.io/rebus-orbit/*` and `ghcr.io/cheekiskrub/*`. No auth needed for public images; if private, Docker login uses `NUGET_TOKEN` (same PAT, read:packages scope).
 3. **`.env` file** — must be present at `/opt/orbit/server/.env` on the VM before first start. Generated from `.env.example` — see Environment Setup below.
 
@@ -65,9 +63,6 @@ All traffic enters via the external Caddy pair (LXC 251/252). The internal `Cadd
 | orbit-server | `PROD_VM_HOST` | `10.0.200.211` |
 | orbit-server | `PROD_VM_USER` | deploy user on VM 211 |
 | orbit-server | `PROD_VM_SSH_KEY` | Private key PEM |
-| orbit-server | `DEV_VM_HOST` | `10.0.200.212` |
-| orbit-server | `DEV_VM_USER` | deploy user on VM 212 |
-| orbit-server | `DEV_VM_SSH_KEY` | Private key PEM |
 | orbit-sdk | `NUGET_TOKEN` | PAT with read/write:packages |
 | orbit-connectors | `NUGET_TOKEN` | PAT with read:packages |
 
@@ -109,11 +104,7 @@ Run these steps after completing VM-SETUP.md (VM provisioned, Docker installed, 
 ### Step 1 — SSH into the VM
 
 ```bash
-# Prod
 ssh -i id_ed25519_rebus orbit@10.0.200.211
-
-# Dev
-ssh -i id_ed25519_rebus orbit@10.0.200.212
 ```
 
 ### Step 2 — Create deploy directory and clone
@@ -141,9 +132,6 @@ MINIO_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
 sed -i "s/CHANGE_ME_generate_with_openssl_rand_hex_32/${SESSION_SECRET}/" .env
 sed -i "s/POSTGRES_PASSWORD=CHANGE_ME/POSTGRES_PASSWORD=${PG_PASS}/" .env
 sed -i "s/MINIO_PASSWORD=CHANGE_ME/MINIO_PASSWORD=${MINIO_PASS}/" .env
-
-# For DEV VM, also change the SERVER_URL line:
-# sed -i "s|orbit.rebus.industries|orbit-dev.rebus.industries|g" .env
 ```
 
 ### Step 4 — Pull images and start
@@ -165,10 +153,9 @@ docker compose up -d
 Triggered automatically on a `v*.*.*` tag push, or manually:
 
 1. Go to `github.com/REBUS-ORBIT/orbit-server` → Actions → **Deploy ORBIT Server**
-2. Click **Run workflow**
-3. Choose target: `prod`, `dev`, or `both`
+2. Click **Run workflow** (it also runs automatically on push to `main` and on `v*.*.*` tags)
 
-The workflow SSHes to the VM, runs `git pull`, `docker compose pull`, `docker compose up -d`, then prints `docker compose ps`.
+The workflow SSHes to VM 211 and runs `scripts/deploy.sh`.
 
 ### Via SSH (manual / emergency)
 
@@ -401,7 +388,7 @@ VM not running, or key mismatch. Check Proxmox: `qm status 211`. If stopped: `qm
 
 These are blockers that must be resolved before ORBIT can serve production traffic:
 
-1. **Provision VMs 211 and 212** — Proxmox clone from VM 201. Follow VM-SETUP.md.
+1. **Provisioning** — VM 211 (prod) is provisioned and live. VM 212 (dev/staging) has been retired.
 2. **Rebuild Docker images** — `orbit-server`, `orbit-frontend`, `orbit-preview` must be rebuilt from the patched Speckle 2.31.1 source and pushed to `ghcr.io/rebus-orbit/*`. The compose file currently points to `ghcr.io/cheekiskrub/*` (temporary).
 3. **Rotate SESSION_SECRET and MinIO password** — The values set during first deploy are the permanent ones. Store them somewhere secure (password manager or Proxmox secrets).
 4. **Apply external Caddy config** — Add entries from `caddy/caddy-proxy-additions.conf` to LXC 251 and 252.

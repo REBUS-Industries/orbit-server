@@ -7,8 +7,7 @@ alwaysApply: true
 
 ## ✅ WRITE — Active projects (create, edit, deploy here)
 - **REBUS-ORBIT GitHub org** — all repos (`orbit-server`, `orbit-infra`, `orbit-sdk`, `orbit-connectors`, `prism`)
-- **VM 211** (`10.0.200.211`) — ORBIT production
-- **VM 212** (`10.0.200.212`) — ORBIT dev/staging
+- **VM 211** (`10.0.200.211`) — ORBIT production (runs ORBIT + PRISM)
 - **PRISM** container on VM 211
 
 ## 🚫 READ ONLY — Never modify, commit to, or deploy from
