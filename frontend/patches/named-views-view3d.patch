@@ -29,7 +29,7 @@
 +                    id: camId,
 +                    speckle_type: camType,
 +                    applicationId: cam.applicationId as string | undefined,
-+                    name: (cam.name as string) ?? camId,
++                    name: (cam.name as string | undefined) ?? camId,
 +                    origin: { x: camOrigin.x, y: camOrigin.y, z: camOrigin.z },
 +                    target: { x: camTarget.x, y: camTarget.y, z: camTarget.z }
 +                  } as unknown as SpeckleView)
