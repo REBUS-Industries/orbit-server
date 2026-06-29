@@ -51,9 +51,22 @@ commit:
   (rule `displayName ?? name`), reading `displayName` / `properties.displayName` /
   `metadata.displayName`. Falls back to `name` for non-fixtures and old models.
   See prism-fixtures-service `docs/handoffs/DISPLAY_NAME_ORBIT.md`.
+- `patches/named-views-view3d.patch` — restore the ORBIT connector's **named
+  views** (Rhino named views, sent as `Objects.BuiltElements.View.View3D` inline
+  under the root collection's `views`) in the viewer's **Camera Controls** menu.
+  The branded `setup.ts` only built `metadata.views` for the newer V3
+  `Objects.Other.Camera` shape; this patch extends the same root-object
+  (`/objects/{stream}/{id}/single`) fetch to also build `SpeckleView`s from
+  `View3D` entries (using their exact inline `origin`/`target`), and de-dupes
+  `metadata.views` by id so root-fetched coordinates win over any in-tree copy
+  whose coords were stripped during load. No connector/SDK change or model
+  re-send is required — the camera menu UI (`camera/Menu.vue`) and
+  `viewer.getViews()` already support View3D; the gap was reliable population.
 
 If you bump `ORBIT_FRONTEND_SOURCE_COMMIT`, re-verify the patches apply (a fork
-sync can move the patched lines) before deploying.
+sync can move the patched lines) before deploying. `named-views-view3d.patch`
+anchors on the `rootViews` loop and the `views.value = [...]` assignment in
+`lib/viewer/composables/setup.ts`; if a sync moves those, re-extract the patch.
 
 ### ORBIT brand theme
 
