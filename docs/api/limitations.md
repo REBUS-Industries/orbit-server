@@ -7,7 +7,7 @@ Known constraints for ORBIT API integrators (REBUS production instance, 2026-06)
 - **GraphQL only** — no REST routes for create/read/update/delete comments.
 - **No SDK helpers** — `orbit-sdk` covers projects/models/versions; comments require raw GraphQL.
 - **`viewerState` is complex** — no published JSON schema; copy from UI-created comments or accept list-only comments without viewer pins.
-- **`resourceIdString` format** — comma-delimited viewer encoding; not fully documented outside the viewer codebase. Inspect network traffic when creating pins in the UI.
+- **`resourceIdString` format** — comma-delimited viewer encoding. The grammar (combining models/versions/objects/folders) is documented in [Federating & combining models](federating-models); you can also copy a real value from the UI network tab when creating a pin.
 - **ProseMirror required** — plain-string `text` is not supported on modern `CreateCommentInput`; use `content.doc`.
 - **Blob attachments** — separate upload step; blob API not covered in this docs v1 (use browser devtools or upstream Speckle file-upload docs).
 - **Legacy `data` bag** — unstructured JSON on deprecated API; avoid for new work.
@@ -15,7 +15,7 @@ Known constraints for ORBIT API integrators (REBUS production instance, 2026-06)
 ## Viewers
 
 - **No `@speckle/viewer` guide** — ORBIT does not ship or support the upstream Speckle viewer npm package. See [Building a 3rd party viewer](building-a-3rd-party-viewer) for the receive pipeline, or PRISM UE streaming for portal embeds.
-- **`viewerState` / `resourceIdString`** — also listed under Comments above; required for custom viewers that show pins.
+- **`viewerState` / `resourceIdString`** — also listed under Comments above; required for custom viewers that show pins. The `resourceIdString` grammar is documented in [Federating & combining models](federating-models); `viewerState` (camera/selection) still has no published schema.
 
 ## Documentation & discovery
 

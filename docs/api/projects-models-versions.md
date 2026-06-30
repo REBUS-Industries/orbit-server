@@ -8,6 +8,8 @@ Project (was "stream")
       └── Version (was "commit") → references root Object ID
 ```
 
+To load several models or versions together in one viewer scene, see [Federating & combining models](federating-models).
+
 ## List your projects
 
 ```graphql
