@@ -33,7 +33,7 @@ Every thread is attached to one or more **resources**:
 - **Model** or **version** discussion
 - **Object pin** — comment anchored to a specific object in the viewer
 
-Modern API uses a single **`resourceIdString`** — the same comma-delimited format as viewer URLs (e.g. model + version + object path).
+Modern API uses a single **`resourceIdString`** — the same comma-delimited format as viewer URLs (e.g. model + version + object path). See [Federating & combining models](federating-models) for the full grammar.
 
 Legacy API uses `resources: [{ resourceType, resourceId }]` where `resourceType` is one of: `stream`, `commit`, `object`, `comment`.
 
