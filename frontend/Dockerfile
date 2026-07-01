@@ -48,6 +48,9 @@ COPY --from=fetch-upstream /src/speckle-server/ .
 #  - expand-all selection data, instance-proxy mesh tree, datum gizmo toggle
 #  - named-views-view3d: restore the connector's View3D named views in the
 #    Camera Controls menu (built from the root object's `views` array)
+#  - viewer-displayable-lookup: guard SpeckleConverter.displayableLookup against a
+#    single (non-array) displayValue/elements so block/instance geometry no longer
+#    crashes the viewer with "(x || []) is not iterable"
 COPY overlays/packages/ ./packages/
 COPY patches/ ./patches/
 RUN apt-get update -y \
@@ -58,6 +61,7 @@ RUN apt-get update -y \
   && patch -p1 < patches/viewer-index-datum.patch \
   && patch -p1 < patches/camera-default.patch \
   && patch -p1 < patches/named-views-view3d.patch \
+  && patch -p1 < patches/viewer-displayable-lookup.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
   && apt-get clean \
