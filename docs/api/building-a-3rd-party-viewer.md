@@ -394,9 +394,10 @@ Report discrepancies by comparing live `/graphql` introspection with these docs 
 2. [Projects, models & versions](projects-models-versions) — resolve `projectId`, `modelId`, `versionId`
 3. [Objects (REST)](objects) — upload/download semantics (note `/single` path in this guide)
 4. **This page** — receive + render pipeline
-5. [Comments & discussions](comments-discussions) — optional pins/threads
-6. [GraphQL reference](graphql-reference) — full operation catalogue
-7. [Limitations](limitations) — constraints and upstream drift
+5. [Viewer camera controls](viewer-camera-controls) — reproduce ORBIT orbit/pan/zoom feel in your viewer
+6. [Comments & discussions](comments-discussions) — optional pins/threads
+7. [GraphQL reference](graphql-reference) — full operation catalogue
+8. [Limitations](limitations) — constraints and upstream drift
 
 Related architecture (outside `/docs`):
 
