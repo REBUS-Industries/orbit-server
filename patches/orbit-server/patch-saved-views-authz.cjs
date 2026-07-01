@@ -13,9 +13,10 @@
  */
 const fs = require('fs')
 
+const ROOT = process.env.SPECKLE_ROOT || '/speckle-server'
 const TARGETS = [
-  '/speckle-server/packages/shared/dist/authz/policies/project/savedViews/canCreate.js',
-  '/speckle-server/packages/shared/dist/authz/fragments/savedViews.js'
+  `${ROOT}/packages/shared/dist/authz/policies/project/savedViews/canCreate.js`,
+  `${ROOT}/packages/shared/dist/authz/fragments/savedViews.js`
 ]
 
 const ALREADY_PATCHED =
