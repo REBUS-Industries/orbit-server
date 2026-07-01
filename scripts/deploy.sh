@@ -2,11 +2,14 @@
 # Manual deploy helper — run on the VM directly
 set -euo pipefail
 
-# After git pull, re-exec so we run the updated script (bash loads the file once at start).
+# After syncing to origin/main, re-exec so we run the updated script (bash loads
+# the file once at start). Use reset --hard so local edits on the VM (e.g. a
+# manual patch attempt) cannot block deploy.
 if [[ -z "${ORBIT_DEPLOY_REEXEC:-}" ]]; then
   STACK_DIR="$(dirname "$0")/.."
   cd "$STACK_DIR"
-  git pull origin main
+  git fetch origin main
+  git reset --hard origin/main
   export ORBIT_DEPLOY_REEXEC=1
   exec bash "$0" "$@"
 fi
@@ -30,12 +33,20 @@ docker compose pull postgres redis minio caddy webhook-service fileimport-servic
 docker compose pull orbit-preview || echo "Note: could not pull orbit-preview (using local image if present)"
 
 # ── ORBIT server (patched) ──────────────────────────────────────────────────
-# Keep the cached patched image if present (private GHCR base needs auth to pull).
+# Rebuild when patches/orbit-server changes; otherwise reuse the cached image
+# (private GHCR base needs auth to pull on cold builds).
 SERVER_IMAGE="orbit-server-patched:${ORBIT_SERVER_VERSION:-latest}"
-if docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1; then
-  echo "Using existing ${SERVER_IMAGE} (skip rebuild; prune image or set ORBIT_SERVER_VERSION to force)"
+PATCH_REV="$(git log -1 --format=%H -- patches/orbit-server/)"
+STATE_DIR="$(dirname "$STACK_DIR")/.orbit-deploy-state"
+STATE_FILE="${STATE_DIR}/server-patch-rev"
+mkdir -p "${STATE_DIR}"
+if [[ -f "${STATE_FILE}" ]] && [[ "$(cat "${STATE_FILE}")" == "${PATCH_REV}" ]] \
+  && docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1; then
+  echo "Using existing ${SERVER_IMAGE} (patches/orbit-server unchanged at ${PATCH_REV})"
 else
+  echo "Building ${SERVER_IMAGE} (new or changed patches/orbit-server at ${PATCH_REV})"
   docker compose build orbit-server
+  echo "${PATCH_REV}" > "${STATE_FILE}"
 fi
 
 # ── ORBIT frontend (CUSTOM branded build) ───────────────────────────────────

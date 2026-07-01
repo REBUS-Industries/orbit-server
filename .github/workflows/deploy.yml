@@ -28,4 +28,6 @@ jobs:
             set -euo pipefail
             REPO=/opt/orbit/server
             DEPLOY_USER=$(stat -c '%U' "${REPO}/.git")
+            # Discard local VM edits before deploy.sh (e.g. manual patch attempts).
+            sudo -u "${DEPLOY_USER}" bash -c "cd '${REPO}' && git fetch origin main && git reset --hard origin/main"
             sudo -u "${DEPLOY_USER}" bash "${REPO}/scripts/deploy.sh"
