@@ -97,6 +97,13 @@ Also required (set in `docker-compose.yml` / `.env`):
 Do **not** enable `FF_WORKSPACES_MODULE_ENABLED` on self-hosted ORBIT — it
 historically broke login. Saved Views does not require the workspaces module.
 
+### `Dockerfile.incremental` — patch without re-pulling the GHCR base
+
+When `patches/orbit-server` changes but the VM cannot authenticate to GHCR,
+`scripts/deploy.sh` falls back to building this thin layer on top of the
+existing `orbit-server-patched` image (runs `patch-saved-views-authz.cjs`
+only). Full rebuild uses `docker compose build --pull never` when possible.
+
 ## Regenerating a patch after an upstream bump
 
 ```bash

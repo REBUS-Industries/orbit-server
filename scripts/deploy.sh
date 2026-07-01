@@ -33,19 +33,40 @@ docker compose pull postgres redis minio caddy webhook-service fileimport-servic
 docker compose pull orbit-preview || echo "Note: could not pull orbit-preview (using local image if present)"
 
 # ── ORBIT server (patched) ──────────────────────────────────────────────────
-# Rebuild when patches/orbit-server changes; otherwise reuse the cached image
-# (private GHCR base needs auth to pull on cold builds).
+# Rebuild when patches/orbit-server changes; otherwise reuse the cached image.
+# Prefer --pull never so a cached ghcr.io/rebus-orbit/orbit-server base works
+# without GHCR auth. If that fails, layer new patches onto the existing image.
 SERVER_IMAGE="orbit-server-patched:${ORBIT_SERVER_VERSION:-latest}"
 PATCH_REV="$(git log -1 --format=%H -- patches/orbit-server/)"
 STATE_DIR="$(dirname "$STACK_DIR")/.orbit-deploy-state"
 STATE_FILE="${STATE_DIR}/server-patch-rev"
+PATCH_CTX="${STACK_DIR}/patches/orbit-server"
 mkdir -p "${STATE_DIR}"
+
+build_orbit_server() {
+  echo "Building ${SERVER_IMAGE} (patches/orbit-server at ${PATCH_REV})"
+  if docker compose build --pull never orbit-server; then
+    return 0
+  fi
+  if docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1 \
+    && [[ -f "${PATCH_CTX}/Dockerfile.incremental" ]]; then
+    echo "Full rebuild failed; applying incremental patch layer on ${SERVER_IMAGE}"
+    docker build \
+      -f "${PATCH_CTX}/Dockerfile.incremental" \
+      --build-arg "PATCHED_BASE=${SERVER_IMAGE}" \
+      -t "${SERVER_IMAGE}" \
+      "${PATCH_CTX}"
+    return 0
+  fi
+  echo "ERR: could not build ${SERVER_IMAGE} (GHCR login or cached base image required)" >&2
+  return 1
+}
+
 if [[ -f "${STATE_FILE}" ]] && [[ "$(cat "${STATE_FILE}")" == "${PATCH_REV}" ]] \
   && docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1; then
   echo "Using existing ${SERVER_IMAGE} (patches/orbit-server unchanged at ${PATCH_REV})"
 else
-  echo "Building ${SERVER_IMAGE} (new or changed patches/orbit-server at ${PATCH_REV})"
-  docker compose build orbit-server
+  build_orbit_server
   echo "${PATCH_REV}" > "${STATE_FILE}"
 fi
 

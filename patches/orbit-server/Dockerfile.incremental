@@ -1,0 +1,11 @@
+# Apply new runtime patches on top of an existing orbit-server-patched image
+# without re-pulling the private ghcr.io/rebus-orbit/orbit-server base.
+#
+# Used by scripts/deploy.sh when patches/orbit-server changes but GHCR auth
+# is unavailable and the previous patched image is still present locally.
+
+ARG PATCHED_BASE=orbit-server-patched:latest
+FROM ${PATCHED_BASE}
+
+COPY patch-saved-views-authz.cjs /tmp/patch-saved-views-authz.cjs
+RUN node /tmp/patch-saved-views-authz.cjs && rm /tmp/patch-saved-views-authz.cjs
