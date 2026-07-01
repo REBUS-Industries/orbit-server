@@ -69,6 +69,8 @@ RUN apt-get update -y \
 
 ARG NODE_ENV
 ENV NODE_ENV=${NODE_ENV}
+# Saved Views feature flag — read at nuxt.config build time via @speckle/shared/environment
+ENV FF_SAVED_VIEWS_ENABLED=true
 RUN PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 yarn workspaces focus -A
 RUN yarn workspaces foreach --exclude "@speckle/frontend-2" -W run build
 

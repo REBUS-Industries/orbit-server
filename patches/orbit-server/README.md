@@ -74,6 +74,29 @@ Net effect: with `ADMIN_OVERRIDE_ENABLED=true`, server admins see every
 project on the server in their Projects list. Non-admin users behave
 exactly as before.
 
+### `patch-saved-views-authz.cjs` — Saved Views on self-hosted (no workspace)
+
+Speckle Cloud gates **Saved Views** (the viewer panel for saving camera,
+visibility, section-box, etc.) behind workspace plan features. ORBIT projects
+are not in a workspace, so the API must pass `allowUnworkspaced: true` when
+checking `WorkspacePlanFeatures.SavedViews` in `@speckle/shared` authz.
+
+The rebus-dev fork source already includes this tweak; the patched server
+image applies it at build time to the compiled JS under
+`packages/shared/dist/authz/…` if the base `ghcr.io/rebus-orbit/orbit-server`
+image does not. The script is a **no-op** when `allowUnworkspaced: true` is
+already present.
+
+Also required (set in `docker-compose.yml` / `.env`):
+
+- `FF_SAVED_VIEWS_ENABLED=true` on **orbit-server**
+- `NUXT_PUBLIC_FF_SAVED_VIEWS_ENABLED=true` on **orbit-frontend** (and
+  `FF_SAVED_VIEWS_ENABLED=true` at frontend **build** time — see
+  `frontend/Dockerfile`)
+
+Do **not** enable `FF_WORKSPACES_MODULE_ENABLED` on self-hosted ORBIT — it
+historically broke login. Saved Views does not require the workspaces module.
+
 ## Regenerating a patch after an upstream bump
 
 ```bash

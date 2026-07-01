@@ -73,6 +73,8 @@ services:
       NUXT_REDIS_URL:                  redis://redis
       SPECKLE_SERVER_URL:              http://orbit-server:3000
       NUXT_PUBLIC_LOG_LEVEL:           warn
+      # Saved Views (viewer camera/state bookmarks) — requires matching FF on orbit-server
+      NUXT_PUBLIC_FF_SAVED_VIEWS_ENABLED: ${FF_SAVED_VIEWS_ENABLED:-true}
     depends_on:
       orbit-server:
         condition: service_healthy
@@ -112,6 +114,9 @@ services:
       EMAIL_USERNAME:             ${EMAIL_USERNAME:-}
       EMAIL_PASSWORD:             ${EMAIL_PASSWORD:-}
       EMAIL_FROM:                 ${EMAIL_FROM:-orbit@rebus.industries}
+      # Saved Views — enables GraphQL savedViews mutations/queries (self-hosted unlock
+      # in authz is applied by patches/orbit-server/patch-saved-views-authz.cjs).
+      FF_SAVED_VIEWS_ENABLED:     ${FF_SAVED_VIEWS_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy

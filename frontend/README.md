@@ -68,7 +68,18 @@ commit:
   `getElementsValue` does no array check, so a single detached `displayValue`
   threw `TypeError: (x || []) is not iterable` (minified `(a || [])`) and aborted
   the load. The patch normalises both to arrays before the spread. Anchors on the
-  `displayValues` / `elements` spread in `packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts`.
+  `displayValues` / `elements` spread in   `packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts`.
+
+### Saved Views (viewer panel)
+
+Enabled by default via deploy env (`FF_SAVED_VIEWS_ENABLED=true` on server +
+`NUXT_PUBLIC_FF_SAVED_VIEWS_ENABLED` on frontend). The branded rebus-dev source
+already exposes the Saved Views UI when the flag is on; the server authz
+self-hosted unlock (`allowUnworkspaced: true` for non-workspace projects) is
+applied at server image build time by
+`patches/orbit-server/patch-saved-views-authz.cjs`. This is separate from
+**named views** (Rhino named views / View3D from the connector — see
+`named-views-view3d.patch`).
 
 If you bump `ORBIT_FRONTEND_SOURCE_COMMIT`, re-verify the patches apply (a fork
 sync can move the patched lines) before deploying. `named-views-view3d.patch`
