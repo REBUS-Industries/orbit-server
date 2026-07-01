@@ -100,10 +100,11 @@ historically broke login. Saved Views does not require the workspaces module.
 ### `Dockerfile.incremental` — patch without re-pulling the GHCR base
 
 When `patches/orbit-server` changes but the VM cannot authenticate to GHCR,
-`scripts/deploy.sh` falls back to extracting authz JS from the existing
-`orbit-server-patched` image, patching with `node:22-alpine` on the host, and
-building this COPY-only layer (no `RUN` — the runtime image is distroless).
-Full rebuild uses `docker build --pull=false` against the main Dockerfile.
+`scripts/deploy.sh` tries to locate saved-views authz JS under
+`packages/shared/dist/…` or `node_modules/@speckle/shared/dist/…`, patch with
+`node:22-alpine` on the host, and build a COPY-only layer (no `RUN`). If authz
+files are missing or GHCR is unavailable, deploy continues with the existing
+`orbit-server-patched` image rather than failing.
 
 ## Regenerating a patch after an upstream bump
 
