@@ -45,21 +45,50 @@ mkdir -p "${STATE_DIR}"
 
 build_orbit_server() {
   echo "Building ${SERVER_IMAGE} (patches/orbit-server at ${PATCH_REV})"
-  if docker compose build --pull never orbit-server; then
+  if docker build \
+    --pull=false \
+    -f "${PATCH_CTX}/Dockerfile" \
+    --build-arg "ORBIT_SERVER_BASE_VERSION=${ORBIT_SERVER_VERSION:-latest}" \
+    -t "${SERVER_IMAGE}" \
+    "${PATCH_CTX}"; then
     return 0
   fi
   if docker image inspect "${SERVER_IMAGE}" >/dev/null 2>&1 \
     && [[ -f "${PATCH_CTX}/Dockerfile.incremental" ]]; then
-    echo "Full rebuild failed; applying incremental patch layer on ${SERVER_IMAGE}"
-    docker build \
-      -f "${PATCH_CTX}/Dockerfile.incremental" \
-      --build-arg "PATCHED_BASE=${SERVER_IMAGE}" \
-      -t "${SERVER_IMAGE}" \
-      "${PATCH_CTX}"
+    echo "Full rebuild failed; applying incremental authz patch on ${SERVER_IMAGE}"
+    apply_incremental_authz_patch
     return 0
   fi
   echo "ERR: could not build ${SERVER_IMAGE} (GHCR login or cached base image required)" >&2
   return 1
+}
+
+apply_incremental_authz_patch() {
+  local tmp authz_root cid
+  tmp="$(mktemp -d)"
+  authz_root="${tmp}/authz"
+  mkdir -p "${authz_root}/policies/project/savedViews" "${authz_root}/fragments"
+
+  cid="$(docker create "${SERVER_IMAGE}")"
+  docker cp "${cid}:/speckle-server/packages/shared/dist/authz/policies/project/savedViews/canCreate.js" \
+    "${authz_root}/policies/project/savedViews/canCreate.js"
+  docker cp "${cid}:/speckle-server/packages/shared/dist/authz/fragments/savedViews.js" \
+    "${authz_root}/fragments/savedViews.js"
+  docker rm "${cid}" >/dev/null
+
+  docker run --rm \
+    -v "${authz_root}:/authz" \
+    -v "${PATCH_CTX}/patch-saved-views-authz.cjs:/patch.cjs:ro" \
+    -e "SPECKLE_ROOT=/authz" \
+    node:22-alpine \
+    node /patch.cjs
+
+  docker build \
+    -f "${PATCH_CTX}/Dockerfile.incremental" \
+    --build-arg "PATCHED_BASE=${SERVER_IMAGE}" \
+    -t "${SERVER_IMAGE}" \
+    "${tmp}"
+  rm -rf "${tmp}"
 }
 
 if [[ -f "${STATE_FILE}" ]] && [[ "$(cat "${STATE_FILE}")" == "${PATCH_REV}" ]] \

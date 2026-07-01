@@ -1,11 +1,13 @@
-# Apply new runtime patches on top of an existing orbit-server-patched image
+# Apply Saved Views authz patch on top of an existing orbit-server-patched image
 # without re-pulling the private ghcr.io/rebus-orbit/orbit-server base.
 #
-# Used by scripts/deploy.sh when patches/orbit-server changes but GHCR auth
-# is unavailable and the previous patched image is still present locally.
+# Patched JS is prepared on the host (see scripts/deploy.sh); this Dockerfile
+# only COPYs files — no RUN — so it works on distroless images.
 
 ARG PATCHED_BASE=orbit-server-patched:latest
 FROM ${PATCHED_BASE}
 
-COPY patch-saved-views-authz.cjs /tmp/patch-saved-views-authz.cjs
-RUN node /tmp/patch-saved-views-authz.cjs && rm /tmp/patch-saved-views-authz.cjs
+COPY authz/policies/project/savedViews/canCreate.js \
+  /speckle-server/packages/shared/dist/authz/policies/project/savedViews/canCreate.js
+COPY authz/fragments/savedViews.js \
+  /speckle-server/packages/shared/dist/authz/fragments/savedViews.js
