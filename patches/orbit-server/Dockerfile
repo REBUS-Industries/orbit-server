@@ -28,3 +28,8 @@ COPY projects.js /speckle-server/packages/server/dist/modules/core/graph/resolve
 #   specific error when the user does already have effective access to
 #   the project (explicit member, or server:admin with ADMIN_OVERRIDE_ENABLED).
 COPY serverInvites.js /speckle-server/packages/server/dist/modules/serverinvites/graph/resolvers/serverInvites.js
+
+# Patch 4 — @speckle/shared authz: allow Saved Views on non-workspace projects
+#   (self-hosted unlock; no-op if the base image already includes allowUnworkspaced).
+COPY patch-saved-views-authz.cjs /tmp/patch-saved-views-authz.cjs
+RUN node /tmp/patch-saved-views-authz.cjs && rm /tmp/patch-saved-views-authz.cjs
