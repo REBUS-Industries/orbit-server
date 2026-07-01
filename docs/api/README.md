@@ -73,9 +73,11 @@ The [`orbit-sdk`](https://github.com/REBUS-Industries/orbit-sdk) package provide
 
 - [Authentication](authentication) — PAT, OAuth2, Bearer header
 - [Projects, models & versions](projects-models-versions) — core data hierarchy
+- [Federating & combining models](federating-models) — load several models/versions in one viewer scene
 - [Objects (REST)](objects) — upload/download pipeline
 - [Materials](materials) — RenderMaterial, immutability, PRISM material swap API
 - [Building a 3rd party viewer](building-a-3rd-party-viewer) — fetch, traverse, and render ORBIT geometry
+- [Viewer camera controls](viewer-camera-controls) — orbit, pan, zoom settings for mouse and trackpad
 - [Comments & discussions](comments-discussions) — threads, object pins, viewer state
 - [GraphQL reference](graphql-reference) — operation catalogue with examples
 - [Subscriptions & permissions](subscriptions-permissions) — live updates and ACL model

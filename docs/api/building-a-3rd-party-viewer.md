@@ -312,7 +312,7 @@ If your viewer should show ORBIT Discussions or create object pins, integrate th
 
 Key integrator notes:
 
-- **`resourceIdString`** — comma-delimited encoding tying a thread to a model, version, and optionally a specific object. **Not formally documented.** Copy a real value from the ORBIT web UI (network tab when creating a pin) or from `viewerResources` on an existing comment.
+- **`resourceIdString`** — comma-delimited encoding tying a thread to a model, version, and optionally a specific object. Documented in [Federating & combining models](federating-models); you can also copy a real value from the ORBIT web UI (network tab when creating a pin) or read it from `viewerResources` on an existing comment.
 - **`viewerState`** — JSON blob capturing camera, selection, isolation state for pins. **No published schema.** Omit for text-only threads; copy from UI-created comments for spatial pins.
 - Comment bodies require **ProseMirror JSON** (`content.doc`), not plain strings.
 
@@ -378,7 +378,7 @@ The [@speckle/viewer](https://www.npmjs.com/package/@speckle/viewer) npm package
 | Gap | Workaround |
 |---|---|
 | No ORBIT-maintained web viewer SDK | Build receive pipeline (this guide) or use PRISM UE streaming |
-| `viewerState` / `resourceIdString` formats undocumented | Copy from UI network traffic; see [Comments & discussions](comments-discussions) |
+| `viewerState` format undocumented | Copy from UI network traffic; see [Comments & discussions](comments-discussions). The `resourceIdString` grammar is documented in [Federating & combining models](federating-models). |
 | `/objects/.../single` vs `/objects/...` path | Use `/single` on ORBIT production |
 | `orbit-frontend` not available as npm/source | Prebuilt Docker image only |
 | Blob upload API for custom senders | Inspect browser network tab or upstream Speckle file-upload docs |
@@ -394,9 +394,10 @@ Report discrepancies by comparing live `/graphql` introspection with these docs 
 2. [Projects, models & versions](projects-models-versions) — resolve `projectId`, `modelId`, `versionId`
 3. [Objects (REST)](objects) — upload/download semantics (note `/single` path in this guide)
 4. **This page** — receive + render pipeline
-5. [Comments & discussions](comments-discussions) — optional pins/threads
-6. [GraphQL reference](graphql-reference) — full operation catalogue
-7. [Limitations](limitations) — constraints and upstream drift
+5. [Viewer camera controls](viewer-camera-controls) — reproduce ORBIT orbit/pan/zoom feel in your viewer
+6. [Comments & discussions](comments-discussions) — optional pins/threads
+7. [GraphQL reference](graphql-reference) — full operation catalogue
+8. [Limitations](limitations) — constraints and upstream drift
 
 Related architecture (outside `/docs`):
 
