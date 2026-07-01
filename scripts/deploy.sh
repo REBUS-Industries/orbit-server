@@ -169,5 +169,9 @@ fi
 # reused even when GHCR is unauthenticated.
 docker compose build orbit-frontend
 
+# Recover from interrupted deploys (duplicate/stuck orbit-server container names).
+docker compose stop orbit-server orbit-frontend 2>/dev/null || true
+docker compose rm -f orbit-server orbit-frontend 2>/dev/null || true
+
 docker compose up -d --remove-orphans --pull never
 echo "Deploy complete: $(date)"
