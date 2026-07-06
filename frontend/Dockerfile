@@ -51,6 +51,9 @@ COPY --from=fetch-upstream /src/speckle-server/ .
 #  - viewer-displayable-lookup: guard SpeckleConverter.displayableLookup against a
 #    single (non-array) displayValue/elements so block/instance geometry no longer
 #    crashes the viewer with "(x || []) is not iterable"
+#  - viewer-instanced-line-transform: bake block/instance transforms into instanced
+#    line/curve/point geometry so scaled blocks (e.g. mm→m insert scale 0.001) render
+#    at the correct size; instanced meshes still use GPU per-instance transforms
 COPY overlays/packages/ ./packages/
 COPY patches/ ./patches/
 RUN apt-get update -y \
@@ -62,6 +65,7 @@ RUN apt-get update -y \
   && patch -p1 < patches/camera-default.patch \
   && patch -p1 < patches/named-views-view3d.patch \
   && patch -p1 < patches/viewer-displayable-lookup.patch \
+  && patch -p1 < patches/viewer-instanced-line-transform.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
   && apt-get clean \
