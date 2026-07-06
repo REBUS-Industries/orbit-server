@@ -1,0 +1,131 @@
+--- /dev/null
++++ b/packages/viewer/test/instance-definition-exclusion.test.ts
+@@ -0,0 +1,128 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest'
++import SpeckleConverter from '../src/modules/loaders/Speckle/SpeckleConverter.js'
++import { WorldTree, type TreeNode } from '../src/modules/tree/WorldTree.js'
++import type { ObjectLoader2 } from '@speckle/objectloader2'
++
++type ConverterInternals = SpeckleConverter & {
++  instanceDefinitionLookupTable: Record<string, TreeNode>
++  instancedObjectsLookupTable: Record<string, { applicationId?: string }>
++  instanceProxies: Record<string, TreeNode>
++  subtree: TreeNode
++  getInstanceDefinitionMemberApplicationIds: () => Set<string>
++  convertInstances: () => Promise<void>
++}
++
++describe('instance definition exclusion', () => {
++  let tree: WorldTree
++  let converter: ConverterInternals
++  let loader: ObjectLoader2
++
++  beforeEach(() => {
++    tree = new WorldTree()
++    loader = {
++      getObject: vi.fn(async ({ id }: { id: string }) => ({
++        id,
++        applicationId: `app-${id}`,
++        speckle_type: 'Objects.Data.DataObject:Objects.Data.RhinoObject',
++        units: 'm'
++      }))
++    } as unknown as ObjectLoader2
++    converter = new SpeckleConverter(
++      loader,
++      tree,
++      'https://orbit.rebus.industries/objects/test-stream/test-object'
++    ) as ConverterInternals
++  })
++
++  it('deduplicates member applicationIds across definitions', () => {
++    converter.instanceDefinitionLookupTable = {
++      'def-a': {
++        model: { raw: { objects: ['mesh-1', 'mesh-2'] } }
++      } as TreeNode,
++      'def-b': {
++        model: { raw: { objects: ['mesh-2', 'mesh-3'] } }
++      } as TreeNode
++    }
++
++    const memberIds = converter.getInstanceDefinitionMemberApplicationIds()
++    expect(memberIds.size).toBe(3)
++    expect([...memberIds]).toEqual(
++      expect.arrayContaining(['mesh-1', 'mesh-2', 'mesh-3'])
++    )
++  })
++
++  it('indexes detached definition geometry and removes all standalone member nodes', async () => {
++    const rootCollection = tree.parse({
++      id: 'root-collection',
++      raw: {
++        id: 'root-collection',
++        applicationId: 'root-app',
++        '@instanceDefinitionGeometry': [
++          { referencedId: 'mesh-a' },
++          { referencedId: 'mesh-b' }
++        ]
++      },
++      atomic: true,
++      children: []
++    })
++    const subtree = tree.parse({
++      id: 'https://orbit.rebus.industries/objects/test-stream/test-object',
++      raw: { id: 'subtree' },
++      atomic: true,
++      children: []
++    })
++    tree.addSubtree(subtree)
++    tree.addNode(rootCollection, subtree)
++    converter.subtree = subtree
++
++    converter.instanceDefinitionLookupTable = {
++      'def-1': {
++        model: { raw: { objects: ['app-mesh-a', 'app-mesh-b'] } }
++      } as TreeNode
++    }
++
++    loader.getObject = vi.fn(async ({ id }: { id: string }) => ({
++      id,
++      applicationId: id === 'mesh-a' ? 'app-mesh-a' : 'app-mesh-b',
++      speckle_type: 'Objects.Data.DataObject:Objects.Data.RhinoObject',
++      units: 'm'
++    })) as unknown as ObjectLoader2['getObject']
++
++    const standaloneA = tree.parse({
++      id: 'standalone-a',
++      raw: { id: 'standalone-a', applicationId: 'app-mesh-a' },
++      atomic: true,
++      children: []
++    })
++    const standaloneB = tree.parse({
++      id: 'standalone-b',
++      raw: { id: 'standalone-b', applicationId: 'app-mesh-b' },
++      atomic: true,
++      children: []
++    })
++    const duplicateA = tree.parse({
++      id: 'standalone-a-dup',
++      raw: { id: 'standalone-a-dup', applicationId: 'app-mesh-a' },
++      atomic: true,
++      children: []
++    })
++    tree.addNode(standaloneA, rootCollection)
++    tree.addNode(standaloneB, rootCollection)
++    tree.addNode(duplicateA, rootCollection)
++
++    await converter.convertInstances()
++
++    expect(Object.keys(converter.instancedObjectsLookupTable).sort()).toEqual([
++      'app-mesh-a',
++      'app-mesh-b'
++    ])
++
++    const remainingMemberNodes = tree
++      .findAll(() => true, rootCollection)
++      .filter((node) => {
++        const applicationId = node.model.raw.applicationId?.toString()
++        return applicationId === 'app-mesh-a' || applicationId === 'app-mesh-b'
++      })
++    expect(remainingMemberNodes).toHaveLength(0)
++  })
++})
