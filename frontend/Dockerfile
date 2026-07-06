@@ -54,6 +54,9 @@ COPY --from=fetch-upstream /src/speckle-server/ .
 #  - viewer-instanced-line-transform: bake block/instance transforms into instanced
 #    line/curve/point geometry so scaled blocks (e.g. mm→m insert scale 0.001) render
 #    at the correct size; instanced meshes still use GPU per-instance transforms
+#  - viewer-instance-definition-exclusion: suppress standalone rendering of
+#    @instanceDefinitionGeometry members (indexed for instancing only); reinstate
+#    standard Speckle proxy-based instance exclusion keyed on proxy objects appIds
 COPY overlays/packages/ ./packages/
 COPY patches/ ./patches/
 RUN apt-get update -y \
@@ -66,6 +69,8 @@ RUN apt-get update -y \
   && patch -p1 < patches/named-views-view3d.patch \
   && patch -p1 < patches/viewer-displayable-lookup.patch \
   && patch -p1 < patches/viewer-instanced-line-transform.patch \
+  && patch -p1 < patches/viewer-instance-definition-exclusion.patch \
+  && patch -p1 < patches/viewer-instance-definition-exclusion.test.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
   && apt-get clean \

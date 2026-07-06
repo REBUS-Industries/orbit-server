@@ -1,0 +1,184 @@
+--- a/packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts
++++ b/packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts
+@@ -277,9 +277,13 @@
+       for (const prop in target) {
+         if (prop === '__parents' || prop === 'bbox' || prop === '__closure') continue
+         if (
+-          ['displayMesh', '@displayMesh', 'displayValue', '@displayValue'].includes(
+-            prop
+-          )
++          [
++            'displayMesh',
++            '@displayMesh',
++            'displayValue',
++            '@displayValue',
++            '@instanceDefinitionGeometry'
++          ].includes(prop)
+         )
+           continue
+         if (typeof target[prop] !== 'object' || target[prop] === null) continue
+@@ -714,6 +718,70 @@
+     return (obj.Objects || obj.objects) as Array<string>
+   }
+ 
++  private getModelRootCollection(): TreeNode | null {
++    return this.subtree?.children?.[0] ?? null
++  }
++
++  private getInstanceDefinitionMemberApplicationIds(): Set<string> {
++    const memberIds = new Set<string>()
++    for (const k in this.instanceDefinitionLookupTable) {
++      const definition = this.instanceDefinitionLookupTable[k]
++      const objects = this.getInstanceProxyDefinitionObjects(definition.model.raw)
++      for (let i = 0; i < objects.length; i++) {
++        memberIds.add(objects[i].toString())
++      }
++    }
++    return memberIds
++  }
++
++  private storeInstancedDefinitionObject(
++    applicationId: string,
++    raw: SpeckleObject,
++    parentRaw?: SpeckleObject
++  ) {
++    if (this.instancedObjectsLookupTable[applicationId]) return
++
++    this.instancedObjectsLookupTable[applicationId] = raw
++    if (!this.instanceProxies[applicationId]) {
++      const parentApplicationId = parentRaw?.applicationId
++      if (parentApplicationId !== undefined) {
++        this.instancedObjectsLookupTable[applicationId].parentLayerApplicationId =
++          parentApplicationId.toString()
++      }
++    } else {
++      const definitionId = this.instanceProxies[applicationId].model.raw.definitionId
++      const proxies = Object.values(this.instanceProxies)
++      proxies.forEach((value: TreeNode) => {
++        if (value.model.raw.definitionId === definitionId) {
++          value.model.raw.parentLayerApplicationId =
++            value.parent.model.raw.applicationId
++        }
++      })
++    }
++  }
++
++  private async indexInstanceDefinitionGeometry(memberIds: Set<string>) {
++    const rootCollection = this.getModelRootCollection()
++    if (!rootCollection) return
++
++    const definitionGeometry =
++      rootCollection.model.raw['@instanceDefinitionGeometry'] ??
++      rootCollection.model.raw.instanceDefinitionGeometry
++    if (!Array.isArray(definitionGeometry)) return
++
++    for (const ref of definitionGeometry) {
++      if (typeof ref !== 'object' || ref === null) continue
++      const obj = await this.resolveReference(ref as SpeckleObject)
++      const applicationId = obj.applicationId?.toString()
++      if (!applicationId || !memberIds.has(applicationId)) continue
++      this.storeInstancedDefinitionObject(
++        applicationId,
++        obj,
++        rootCollection.model.raw
++      )
++    }
++  }
++
+   private createTransformNode(obj: SpeckleObject) {
+     const transformNodeId = MathUtils.generateUUID()
+     const transformData = this.getEmptyTransformData(transformNodeId)
+@@ -768,72 +836,43 @@
+     /** uh, oh */
+     this.NodeConverterMapping.InstanceProxy = this.ConvertInstanceProxyToNode.bind(this)
+ 
+-    /** Find the nodes that need to be 'consumed' */
+-    const consumeApplicationIds: { [id: string]: TreeNode | null } = {}
+-    let consumeApplicationIdsCount = 0
+-    for (const k in this.instanceDefinitionLookupTable) {
+-      const definition = this.instanceDefinitionLookupTable[k]
+-      const objects = this.getInstanceProxyDefinitionObjects(definition.model.raw)
+-      for (let i = 0; i < objects.length; i++) {
+-        consumeApplicationIds[objects[i].toString()] = null
+-        consumeApplicationIdsCount++
+-      }
+-    }
++    const definitionMemberIds = this.getInstanceDefinitionMemberApplicationIds()
+ 
+-    /** Do a short async walk */
++    /** Index detached @instanceDefinitionGeometry for instancing without standalone render nodes */
++    await this.indexInstanceDefinitionGeometry(definitionMemberIds)
++
++    /** Remove every tree node that belongs to an instance definition, not just the first match */
++    const nodesToRemove: TreeNode[] = []
+     await this.tree.walkAsync((node: TreeNode) => {
+       if (!node.model.raw.applicationId) return true
+       const applicationId = node.model.raw.applicationId.toString()
+-      if (consumeApplicationIds[applicationId] !== undefined) {
+-        consumeApplicationIds[applicationId] = node
+-        consumeApplicationIdsCount--
+-      }
+-      /** Break out when all applicationIds are accounted for*/
+-      if (consumeApplicationIdsCount === 0) return false
++      if (!definitionMemberIds.has(applicationId)) return true
++
++      this.storeInstancedDefinitionObject(
++        applicationId,
++        node.model.raw,
++        node.parent?.model.raw
++      )
++      nodesToRemove.push(node)
++      delete this.instanceProxies[applicationId]
+       return true
+     }, this.subtree)
+ 
+-    /** Consume them */
+-    for (const k in consumeApplicationIds) {
+-      const objectNode = consumeApplicationIds[k]
+-      if (!objectNode) {
+-        Logger.error(`Consumable applicationId ${k} could not be found`)
+-        continue
+-      }
++    for (let i = 0; i < nodesToRemove.length; i++) {
++      this.tree.removeNode(nodesToRemove[i], true)
++    }
+ 
+-      /** Store the speckle object data */
+-      this.instancedObjectsLookupTable[k] = objectNode.model.raw
+-      /** This part is catering to color proxies source and
+-       *  I hate this the most
+-       *  We store the definition geometry (which can be an instance if nested) parent layer color
+-       *  We do that because these get consumed, so they can no longer be accessed via the WorldTree
+-       */
+-      if (!this.instanceProxies[k]) {
+-        this.instancedObjectsLookupTable[k].parentLayerApplicationId =
+-          objectNode.parent.model.raw.applicationId
+-      } else {
+-        const definitionId = this.instanceProxies[k].model.raw.definitionId
+-        const proxies = Object.values(this.instanceProxies)
+-        proxies.forEach((value: TreeNode) => {
+-          if (value.model.raw.definitionId === definitionId) {
+-            value.model.raw.parentLayerApplicationId =
+-              value.parent.model.raw.applicationId
+-          }
+-        })
++    for (const applicationId of definitionMemberIds) {
++      if (!this.instancedObjectsLookupTable[applicationId]) {
++        Logger.error(`Consumable applicationId ${applicationId} could not be found`)
+       }
+-      /** Remove the instance from the list (if needed) */
+-      delete this.instanceProxies[k]
+-      /** Remove the node from the world tree */
+-      this.tree.removeNode(objectNode, true)
+     }
+ 
+-    let count = 0
+     /** Remaining instance proxies should all be valid */
+     for (const k in this.instanceProxies) {
+       const node = this.instanceProxies[k]
+       /** Create the final instances */
+       await this.convertToNode(node.model.raw, node)
+-      count++
+     }
+   }
+ 

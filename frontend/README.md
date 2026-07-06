@@ -77,6 +77,17 @@ commit:
   the GPU per-instance transform matrix via `InstancedMeshBatch`. Required for
   blocks with non-unit insert scale (e.g. mm→m scale 0.001). Anchors on
   `applyTransforms` in `packages/viewer/src/modules/tree/RenderTree.ts`.
+- `patches/viewer-instance-definition-exclusion.patch` — fix double rendering of
+  block/instance definition geometry: the viewer was drawing `@instanceDefinitionGeometry`
+  members standalone *and* again via each `InstanceProxy` (z-fighting / geometry
+  visible when the model root is hidden). The patch skips traversing
+  `@instanceDefinitionGeometry` for render-tree nodes, indexes those objects for
+  instancing from the detached root collection, and removes every tree node whose
+  `applicationId` is listed in any `@instanceDefinitionProxies[].objects` set.
+  Anchors on `traverse` and `convertInstances` in
+  `packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts`.
+- `patches/viewer-instance-definition-exclusion.test.patch` — vitest coverage for
+  member-id deduplication and removal of all duplicate standalone definition nodes.
 
 ### Saved Views (viewer panel)
 
