@@ -1,0 +1,55 @@
+--- a/packages/viewer/src/modules/tree/RenderTree.ts
++++ b/packages/viewer/src/modules/tree/RenderTree.ts
+@@ -3,6 +3,7 @@
+ import Materials from '../materials/Materials.js'
+ import { type NodeRenderData, NodeRenderView } from './NodeRenderView.js'
+ import { GeometryConverter, SpeckleType } from '../loaders/GeometryConverter.js'
++import { Geometry } from '../converter/Geometry.js'
+ import Logger from '../utils/Logger.js'
+ 
+ export class RenderTree {
+@@ -54,25 +55,25 @@
+         if (node.model.renderView.renderData.geometry.bakeTransform) {
+           transform.multiply(node.model.renderView.renderData.geometry.bakeTransform)
+         }
+-        node.model.renderView.renderData.geometry.transform = transform
+-        node.model.renderView.computeAABB(!node.model.instanced ? transform : undefined)
+-        /** I like that this is gone now! */
+-        //   if (
+-        //     node.model.instanced &&
+-        //     node.model.renderView.speckleType === SpeckleType.Mesh
+-        //   )
+-        //     node.model.renderView.renderData.geometry.transform = transform
+-        //   else {
+-        //     Geometry.transformGeometryData(
+-        //       node.model.renderView.renderData.geometry,
+-        //       transform
+-        //     )
+-        //   }
+-        //   node.model.renderView.computeAABB()
+-        // } else if (node.model.renderView.hasMetadata) {
+-        //   node.model.renderView.renderData.geometry.bakeTransform.premultiply(transform)
+-        //   node.model.renderView.computeAABB()
+-        // }
++        if (
++          node.model.instanced &&
++          node.model.renderView.speckleType === SpeckleType.Mesh
++        ) {
++          node.model.renderView.renderData.geometry.transform = transform
++          node.model.renderView.renderData.geometry.instanced = true
++          node.model.renderView.computeAABB(undefined)
++        } else if (node.model.instanced) {
++          Geometry.transformGeometryData(
++            node.model.renderView.renderData.geometry,
++            transform
++          )
++          node.model.renderView.renderData.geometry.transform = null
++          node.model.renderView.renderData.geometry.instanced = false
++          node.model.renderView.computeAABB()
++        } else {
++          node.model.renderView.renderData.geometry.transform = transform
++          node.model.renderView.computeAABB(transform)
++        }
+       }
+     }
+   }

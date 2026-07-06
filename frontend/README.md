@@ -69,6 +69,14 @@ commit:
   threw `TypeError: (x || []) is not iterable` (minified `(a || [])`) and aborted
   the load. The patch normalises both to arrays before the spread. Anchors on the
   `displayValues` / `elements` spread in   `packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts`.
+- `patches/viewer-instanced-line-transform.patch` — fix instanced block line/curve/
+  point geometry rendering at definition-local scale instead of world scale.
+  `RenderTree.applyTransforms` now bakes the accumulated instance transform into
+  position data for instanced non-mesh geometry (lines, curves, points) and routes
+  them through the standard `LineBatch`/`PointBatch` path. Instanced meshes keep
+  the GPU per-instance transform matrix via `InstancedMeshBatch`. Required for
+  blocks with non-unit insert scale (e.g. mm→m scale 0.001). Anchors on
+  `applyTransforms` in `packages/viewer/src/modules/tree/RenderTree.ts`.
 
 ### Saved Views (viewer panel)
 
