@@ -29,8 +29,7 @@ fi
 # Public upstream images; orbit-server/frontend/docs are built locally
 docker compose pull postgres redis minio caddy webhook-service fileimport-service
 
-# GHCR preview image — best effort when logged in, otherwise use local cache
-docker compose pull orbit-preview || echo "Note: could not pull orbit-preview (using local image if present)"
+# orbit-preview is built locally (see ./preview/Dockerfile)
 
 # ── ORBIT server (patched) ──────────────────────────────────────────────────
 # Rebuild when patch inputs change; otherwise reuse the cached image.
@@ -167,7 +166,7 @@ fi
 # ./frontend/Dockerfile. This is NOT stock Speckle. First build can take
 # 20–40 min. We do NOT pass --pull so cached node/distroless base layers are
 # reused even when GHCR is unauthenticated.
-docker compose build orbit-frontend
+docker compose build orbit-frontend orbit-preview
 
 # Recover from interrupted deploys (duplicate/stuck orbit-server container names).
 docker compose stop orbit-server orbit-frontend 2>/dev/null || true

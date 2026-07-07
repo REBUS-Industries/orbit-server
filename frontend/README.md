@@ -89,6 +89,10 @@ commit:
 - `patches/viewer-instance-definition-exclusion.test.patch` — vitest coverage for
   member-id deduplication and removal of all duplicate standalone definition nodes.
 
+The same three viewer patches (displayable-lookup, instanced-line-transform,
+instance-definition-exclusion) are also applied when building `./preview/Dockerfile`
+so commit preview PNGs render instanced blocks consistently with the live viewer.
+
 ### Saved Views (viewer panel)
 
 Enabled by default via deploy env (`FF_SAVED_VIEWS_ENABLED=true` on server +

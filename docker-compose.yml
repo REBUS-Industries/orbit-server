@@ -131,10 +131,15 @@ services:
       retries: 10
 
   # â”€â”€ Preview Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Image: ghcr.io/rebus-orbit/orbit-preview
+  # Built from ./preview/Dockerfile with the same ORBIT viewer patches as orbit-frontend.
   orbit-preview:
-    image: ghcr.io/rebus-orbit/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}
-    pull_policy: if_not_present
+    build:
+      context: .
+      dockerfile: ./preview/Dockerfile
+      args:
+        ORBIT_PREVIEW_SOURCE_COMMIT: ${ORBIT_PREVIEW_SOURCE_COMMIT:-173d64210351c0b16a64437aaeb6e3dddf5eeada}
+    image: orbit-preview-patched:${ORBIT_PREVIEW_VERSION:-latest}
+    pull_policy: build
     restart: unless-stopped
     environment:
       PORT:         3001
