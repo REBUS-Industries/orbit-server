@@ -77,7 +77,6 @@ RUN apt-get update -y \
   && patch -p1 < patches/viewer-instance-definition-exclusion.test.patch \
   && patch -p1 < patches/viewer-viewmodes-fixture-color.patch \
   && patch -p1 < patches/postSetup-fixture-color.patch \
-  && patch -p1 < patches/shortcuts-fixture-color.patch \
   && patch -p1 < patches/bottom-fixture-color.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
