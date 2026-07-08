@@ -1,9 +1,8 @@
 # ORBIT source-built preview-service image.
 #
 # Builds preview thumbnails from the same ORBIT-branded Speckle fork and viewer
-# patches as ./frontend/Dockerfile. The GHCR `orbit-preview` image predates the
-# instancing fixes and fails to render block InstanceProxy placements whose
-# geometry lives only in detached `@instanceDefinitionGeometry`.
+# patches as ./frontend/Dockerfile. Matches upstream preview-service scope: only
+# shared/objectloader2/viewer/preview-* packages — not the full monorepo.
 ARG NODE_ENV=production
 ARG ORBIT_PREVIEW_SOURCE_COMMIT=173d64210351c0b16a64437aaeb6e3dddf5eeada
 
@@ -26,7 +25,25 @@ WORKDIR /speckle-server
 ARG NODE_ENV
 ENV NODE_ENV=${NODE_ENV}
 
-COPY --from=fetch-upstream /src/speckle-server/ .
+COPY --from=fetch-upstream /src/speckle-server/.yarnrc.yml .
+COPY --from=fetch-upstream /src/speckle-server/.yarn ./.yarn
+COPY --from=fetch-upstream /src/speckle-server/package.json .
+COPY --from=fetch-upstream /src/speckle-server/yarn.lock .
+
+COPY --from=fetch-upstream /src/speckle-server/packages/frontend-2/type-augmentations/stubs ./packages/frontend-2/type-augmentations/stubs/
+COPY --from=fetch-upstream /src/speckle-server/packages/preview-frontend/package.json ./packages/preview-frontend/
+COPY --from=fetch-upstream /src/speckle-server/packages/preview-service/package.json ./packages/preview-service/
+COPY --from=fetch-upstream /src/speckle-server/packages/viewer/package.json ./packages/viewer/
+COPY --from=fetch-upstream /src/speckle-server/packages/objectloader2/package.json ./packages/objectloader2/
+COPY --from=fetch-upstream /src/speckle-server/packages/shared/package.json ./packages/shared/
+
+RUN PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 yarn workspaces focus -A
+
+COPY --from=fetch-upstream /src/speckle-server/packages/shared ./packages/shared/
+COPY --from=fetch-upstream /src/speckle-server/packages/objectloader2 ./packages/objectloader2/
+COPY --from=fetch-upstream /src/speckle-server/packages/viewer ./packages/viewer/
+COPY --from=fetch-upstream /src/speckle-server/packages/preview-frontend ./packages/preview-frontend/
+COPY --from=fetch-upstream /src/speckle-server/packages/preview-service ./packages/preview-service/
 
 # Same ORBIT viewer patches as orbit-frontend (instancing + scaled blocks).
 COPY frontend/patches/ ./patches/
@@ -40,7 +57,6 @@ RUN apt-get update -y \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-RUN PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 yarn workspaces focus -A
 RUN yarn workspaces foreach -W run build
 
 FROM --platform=linux/amd64 node:22-bookworm-slim@sha256:221ee67425de7a3c11ce4e81e63e50caaec82ede3a7d34599ab20e59d29a0cb5 AS node
