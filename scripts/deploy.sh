@@ -166,11 +166,55 @@ fi
 # ./frontend/Dockerfile. This is NOT stock Speckle. First build can take
 # 20–40 min. We do NOT pass --pull so cached node/distroless base layers are
 # reused even when GHCR is unauthenticated.
-docker compose build orbit-frontend orbit-preview
+docker compose build orbit-frontend
+
+# ── ORBIT preview (source-built, preview-service scope only) ────────────────
+PREVIEW_IMAGE="orbit-preview-patched:${ORBIT_PREVIEW_VERSION:-latest}"
+PREVIEW_FALLBACK_IMAGE="ghcr.io/rebus-orbit/orbit-preview:${ORBIT_PREVIEW_VERSION:-latest}"
+PREVIEW_REV="$(git log -1 --format=%H -- preview/Dockerfile frontend/patches/viewer-*.patch)"
+PREVIEW_STATE_FILE="${STATE_DIR}/preview-build-rev"
+
+build_orbit_preview() {
+  echo "Building ${PREVIEW_IMAGE} (preview/ at ${PREVIEW_REV})"
+  if docker compose build orbit-preview; then
+    echo "${PREVIEW_REV}" > "${PREVIEW_STATE_FILE}"
+    return 0
+  fi
+  echo "Note: orbit-preview source build failed"
+  return 1
+}
+
+ensure_orbit_preview_image() {
+  if [[ -f "${PREVIEW_STATE_FILE}" ]] && [[ "$(cat "${PREVIEW_STATE_FILE}")" == "${PREVIEW_REV}" ]] \
+    && docker image inspect "${PREVIEW_IMAGE}" >/dev/null 2>&1; then
+    echo "Using existing ${PREVIEW_IMAGE} (preview/ unchanged at ${PREVIEW_REV})"
+    return 0
+  fi
+
+  if build_orbit_preview; then
+    return 0
+  fi
+
+  if docker image inspect "${PREVIEW_IMAGE}" >/dev/null 2>&1; then
+    echo "Using previously built ${PREVIEW_IMAGE} after failed rebuild"
+    return 0
+  fi
+
+  echo "Trying GHCR fallback ${PREVIEW_FALLBACK_IMAGE}"
+  if docker pull "${PREVIEW_FALLBACK_IMAGE}"; then
+    docker tag "${PREVIEW_FALLBACK_IMAGE}" "${PREVIEW_IMAGE}"
+    return 0
+  fi
+
+  echo "ERR: no ${PREVIEW_IMAGE} available (source build failed and GHCR pull failed)" >&2
+  return 1
+}
+
+ensure_orbit_preview_image
 
 # Recover from interrupted deploys (duplicate/stuck orbit-server container names).
-docker compose stop orbit-server orbit-frontend 2>/dev/null || true
-docker compose rm -f orbit-server orbit-frontend 2>/dev/null || true
+docker compose stop orbit-server orbit-frontend orbit-preview 2>/dev/null || true
+docker compose rm -f orbit-server orbit-frontend orbit-preview 2>/dev/null || true
 
 docker compose up -d --remove-orphans --pull never
 echo "Deploy complete: $(date)"

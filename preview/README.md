@@ -28,7 +28,12 @@ docker compose build orbit-preview
 docker compose up -d --no-deps orbit-preview
 ```
 
-First build can take 15–30 minutes (viewer + preview-frontend compile).
+First build can take 15–30 minutes (viewer + preview-frontend compile). The Dockerfile
+only builds preview-related workspaces (not the full Speckle monorepo), matching
+upstream `packages/preview-service/Dockerfile` scope.
+
+If the source build fails during deploy, `scripts/deploy.sh` falls back to the last
+local `orbit-preview-patched` image, then to `ghcr.io/rebus-orbit/orbit-preview`.
 
 ## Cache bust
 
