@@ -88,6 +88,10 @@ commit:
   `packages/viewer/src/modules/loaders/Speckle/SpeckleConverter.ts`.
 - `patches/viewer-instance-definition-exclusion.test.patch` — vitest coverage for
   member-id deduplication and removal of all duplicate standalone definition nodes.
+- `overlays/.../FixtureColorViewPipeline.ts` + `viewer-viewmodes-fixture-color.patch`
+  — new **Fixtures** view mode (`ViewMode.FIXTURE_COLOR`, shortcut Shift+6): arctic-style
+  ambient-occlusion pipeline with `ShadedPass` meshes tinted from PRISM `categoryColor`
+  metadata via `FilteringExtension.setUserObjectColors` (`fixtureColorView.ts` post-setup).
 
 The same three viewer patches (displayable-lookup, instanced-line-transform,
 instance-definition-exclusion) are also applied when building `./preview/Dockerfile`

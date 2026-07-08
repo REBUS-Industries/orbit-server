@@ -1,0 +1,12 @@
+--- a/packages/frontend-2/components/viewer/controls/Bottom.vue
++++ b/packages/frontend-2/components/viewer/controls/Bottom.vue
+@@ -272,7 +272,8 @@
+   SetViewModeSolid: () => handleViewModeChange(ViewMode.SOLID),
+   SetViewModePen: () => handleViewModeChange(ViewMode.PEN),
+   SetViewModeArctic: () => handleViewModeChange(ViewMode.ARCTIC),
+-  SetViewModeShaded: () => handleViewModeChange(ViewMode.SHADED)
++  SetViewModeShaded: () => handleViewModeChange(ViewMode.SHADED),
++  SetViewModeFixtureColor: () => handleViewModeChange(ViewMode.FIXTURE_COLOR)
+ })
+ 
+ onKeyStroke('Escape', () => {

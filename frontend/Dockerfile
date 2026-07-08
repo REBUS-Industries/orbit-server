@@ -57,6 +57,10 @@ COPY --from=fetch-upstream /src/speckle-server/ .
 #  - viewer-instance-definition-exclusion: suppress standalone rendering of
 #    @instanceDefinitionGeometry members (indexed for instancing only); reinstate
 #    standard Speckle proxy-based instance exclusion keyed on proxy objects appIds
+#  - viewer-viewmodes-fixture-color: add FIXTURE_COLOR view mode — arctic-style AO
+#    pipeline with ShadedPass meshes tinted from PRISM categoryColor metadata
+#  - fixtureColorView post-setup + UI shortcut (Shift+6) apply colours via
+#    FilteringExtension when the Fixtures view mode is active
 COPY overlays/packages/ ./packages/
 COPY patches/ ./patches/
 RUN apt-get update -y \
@@ -71,6 +75,10 @@ RUN apt-get update -y \
   && patch -p1 < patches/viewer-instanced-line-transform.patch \
   && patch -p1 < patches/viewer-instance-definition-exclusion.patch \
   && patch -p1 < patches/viewer-instance-definition-exclusion.test.patch \
+  && patch -p1 < patches/viewer-viewmodes-fixture-color.patch \
+  && patch -p1 < patches/postSetup-fixture-color.patch \
+  && patch -p1 < patches/shortcuts-fixture-color.patch \
+  && patch -p1 < patches/bottom-fixture-color.patch \
   && apt-get remove -y patch \
   && apt-get autoremove -y \
   && apt-get clean \
