@@ -1,0 +1,35 @@
+--- a/packages/viewer/src/modules/extensions/ViewModes.ts
++++ b/packages/viewer/src/modules/extensions/ViewModes.ts
+@@ -3,6 +3,7 @@
+ import { GPass } from '../pipeline/Passes/GPass.js'
+ import { ArcticViewPipeline } from '../pipeline/Pipelines/ArcticViewPipeline.js'
+ import { ShadedViewPipeline } from '../pipeline/Pipelines/ShadedViewPipeline.js'
++import { FixtureColorViewPipeline } from '../pipeline/Pipelines/FixtureColorViewPipeline.js'
+ import { DefaultPipeline } from '../pipeline/Pipelines/DefaultPipeline.js'
+ import { PenViewPipeline } from '../pipeline/Pipelines/PenViewPipeline.js'
+ import { SolidViewPipeline } from '../pipeline/Pipelines/SolidViewPipeline.js'
+@@ -23,7 +24,8 @@
+   SOLID,
+   PEN,
+   ARCTIC,
+-  SHADED
++  SHADED,
++  FIXTURE_COLOR
+ }
+ 
+ export enum ViewModeEvent {
+@@ -122,6 +124,13 @@
+           options,
+           this.viewer.getWorldTree()
+         )
+         break
++      case ViewMode.FIXTURE_COLOR:
++        renderer.pipeline = new FixtureColorViewPipeline(
++          renderer,
++          options,
++          this.viewer.getWorldTree()
++        )
++        break
+     }
+     this.updateViewModeOptions(options)
+     this.viewer.requestRender(UpdateFlags.RENDER_RESET)

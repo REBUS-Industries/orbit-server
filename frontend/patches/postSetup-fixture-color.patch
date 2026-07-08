@@ -1,0 +1,19 @@
+--- a/packages/frontend-2/lib/viewer/composables/setup/postSetup.ts
++++ b/packages/frontend-2/lib/viewer/composables/setup/postSetup.ts
+@@ -74,6 +74,7 @@
+   HighlightExtension
+ } from '~/lib/viewer/composables/setup/highlighting'
+ import { useProjectSavedViewsUpdateTracking } from '~/lib/viewer/composables/savedViews/subscriptions'
+ import { useDatumGizmoPostSetup } from '~/lib/viewer/composables/setup/datumGizmo'
++import { useFixtureColorViewPostSetup } from '~/lib/viewer/composables/setup/fixtureColorView'
+ 
+ function useViewerLoadCompleteEventHandler() {
+   const state = useInjectedViewerState()
+@@ -920,6 +921,7 @@
+   useViewModesPostSetup()
+   useHighlightingPostSetup()
+   useDatumGizmoPostSetup()
++  useFixtureColorViewPostSetup()
+   useCommentContextIntegration()
+   setupDebugMode()
+ }
