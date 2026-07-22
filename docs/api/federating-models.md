@@ -6,7 +6,10 @@ single viewer scene. This is called **federation**. There is **no server-side
 the **`resourceIdString`**, that the viewer, deep links, and comments all share.
 
 If you just want to do it in the web app, see the **Combine models in the web
-viewer** section below. If you are building an integration, read on.
+viewer** section below. For **sub-model folders**, creating `parent/child` models, and
+**merging geometry into a new stored model** (not just a federated view), see
+[Sub-models & combining](models-submodels-merging). If you are building an integration,
+read on.
 
 ---
 
@@ -61,9 +64,12 @@ modelA@ver1,modelB,$Structure # mix: a pinned version + a latest + a whole folde
 
 No code required:
 
-- **Folder "View all"** — in the model list, a folder/group row opens a federated
-  view of all of its submodels (this builds a `$folderName` resource string for
-  you).
+- **Sub-model folders** — models named `Parent/Child/…` appear as a tree on the
+  project's Models page. See [Sub-models & combining](models-submodels-merging) for
+  how to create them.
+- **Folder "View all"** — on a folder/group row, **View all** opens a federated view
+  of every descendant sub-model (builds a `$folderName` resource string for you).
+  Clicking the parent row itself does the same when it has children.
 - **Hand-crafted URL** — visit
   `https://orbit.rebus.industries/projects/{projectId}/models/{resourceIdString}`
   with a comma-separated list, e.g.
@@ -150,7 +156,9 @@ Combining models does **not** create a new model or modify stored data:
   mutation or REST endpoint.
 
 If you need a **persisted** single model that contains several others (rather than
-an ad-hoc federated view), assemble it yourself:
+an ad-hoc federated view), see [Sub-models & combining](models-submodels-merging)
+(**Merge into a new persisted model**) for connector and UI workflows. Via API,
+assemble it yourself:
 
 1. Build a new root `Speckle.Core.Models.Collections.Collection` whose `@elements`
    reference the other models' root objects (or copy their elements).
