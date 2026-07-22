@@ -73,6 +73,7 @@ The [`orbit-sdk`](https://github.com/REBUS-Industries/orbit-sdk) package provide
 
 - [Authentication](authentication) — PAT, OAuth2, Bearer header
 - [Projects, models & versions](projects-models-versions) — core data hierarchy
+- [Sub-models & combining](models-submodels-merging) — nested model names (`parent/child`), folders, and merging geometry into a new model
 - [Federating & combining models](federating-models) — load several models/versions in one viewer scene
 - [Objects (REST)](objects) — upload/download pipeline
 - [Materials](materials) — RenderMaterial, immutability, PRISM material swap API

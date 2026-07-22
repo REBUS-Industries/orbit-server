@@ -8,7 +8,9 @@ Project (was "stream")
       └── Version (was "commit") → references root Object ID
 ```
 
-To load several models or versions together in one viewer scene, see [Federating & combining models](federating-models).
+To organise models into folders and sub-models, or to merge geometry into a new model, see [Sub-models & combining](models-submodels-merging).
+
+To load several models or versions together in one viewer scene (without creating a new stored model), see [Federating & combining models](federating-models).
 
 ## List your projects
 
@@ -108,6 +110,13 @@ mutation($input: CreateModelInput!) {
 ```json
 { "input": { "projectId": "PROJECT_ID", "name": "main" } }
 ```
+
+### Nested names (sub-models)
+
+Model names may contain `/` to encode hierarchy, e.g. `Site/Building/Level 1`. The UI
+renders shared prefixes as folders; federation tokens like `$Site/Building` load every
+descendant model. Naming rules and workflows (web UI, connectors, persisted merges) are
+documented in [Sub-models & combining](models-submodels-merging).
 
 ## Versions
 
